@@ -32,7 +32,9 @@ IF OBJECT_ID('tempdb..#temp_evaluations_overall') IS NOT NULL
 		,re.created_at AS report_date
 		,re.[type] AS report_type
 		,RANK() OVER (PARTITION BY player_id, author_id ORDER BY re.created_at DESC) AS report_order
-		,CASE WHEN re.position_id IS NULL THEN 'NONE' ELSE CASE WHEN po.abbreviation = 'DE43' THEN 'OB' ELSE translation END END AS position
+		,CASE WHEN re.position_id IS NULL THEN 'NONE' ELSE CASE WHEN po.abbreviation = 'DE43' THEN 'OB' 
+			--WHEN po.abbreviation = 'DT' THEN 'DE' 
+			ELSE translation END END AS position
 		,CASE WHEN CAST(gr.value AS NUMERIC (3,1)) IN (8.0) THEN 100
 			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (7.0) THEN 92
 			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.9) THEN 82
@@ -132,6 +134,7 @@ IF OBJECT_ID('tempdb..#temp_draft_boards') IS NOT NULL
 			WHEN position_translation IN ('FS','SS') THEN 'DS'
 			WHEN position_translation IN ('RB','OH') THEN 'RB'
 			WHEN position_translation IN ('WR','WO') THEN 'WR'
+			--WHEN position_translation IN ('DT','DE') THEN 'DE'
 			ELSE position_translation
 		END AS position
 		,gr.[value] AS grade_bucket
@@ -151,7 +154,7 @@ IF OBJECT_ID('tempdb..#temp_draft_boards') IS NOT NULL
 		AND position != ''
 		AND position IS NOT NULL
 		AND position_translation NOT IN ('RS','ST')
-		AND draft_year >= 2012
+		AND draft_year >= 2016
 
 
 -- Check if #temp_draft_boards_with_order exists, if it does drop it
@@ -232,9 +235,9 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_final_scores') IS NOT NULL
 	SELECT fs.bane_player_id
 		,average_prediction
 		,ISNULL(db.position,po.position) AS position
-		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS final_prediction_rank
+		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS average_prediction_rank
 	INTO #temp_pre_combine_final_scores
-	FROM AnalyticsWork.dbo.pre_combine_final_scores_retrain fs
+	FROM AnalyticsWork.dbo.pre_combine_final_scores_retrain_rf fs
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON fs.bane_player_id = pl.id 
 		AND pl.is_deleted = 0
@@ -262,7 +265,7 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_final_scores_percentile') IS NOT NULL
 	DROP TABLE #temp_pre_combine_final_scores_percentile
 
 	SELECT fs.*
-		,(position_count - final_prediction_rank) / CAST(position_count AS FLOAT) as final_prediction_percentile
+		,(position_count - average_prediction_rank) / CAST(position_count AS FLOAT) as average_prediction_percentile
 	INTO #temp_pre_combine_final_scores_percentile
 	FROM #temp_pre_combine_final_scores fs
 	INNER JOIN #temp_pre_combine_final_scores_pos_counts po
@@ -289,7 +292,7 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_grades') IS NOT NULL
 	SELECT fs.bane_player_id
 		,average_prediction AS component_grades_prediction
 		,ISNULL(db.position,po.position) AS position
-		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS final_prediction_rank
+		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS average_prediction_rank
 	INTO #temp_pre_combine_grades
 	FROM [AnalyticsWork].[dbo].pre_combine_component_scores fs
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
@@ -319,7 +322,7 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_grades_percentile') IS NOT NULL
 	DROP TABLE #temp_pre_combine_grades_percentile
 
 	SELECT fs.*
-		,(position_count - final_prediction_rank) / CAST(position_count AS FLOAT) as component_grades_percentile
+		,(position_count - average_prediction_rank) / CAST(position_count AS FLOAT) as component_grades_percentile
 	INTO #temp_pre_combine_grades_percentile
 	FROM #temp_pre_combine_grades fs
 	INNER JOIN #temp_pre_combine_grades_pos_counts po
@@ -346,9 +349,9 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_production') IS NOT NULL
 	SELECT fs.bane_player_id
 		,average_prediction AS production_prediction
 		,ISNULL(db.position,po.position) AS position
-		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS final_prediction_rank
+		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS average_prediction_rank
 	INTO #temp_pre_combine_production
-	FROM [AnalyticsWork].[dbo].pre_combine_production_scores fs
+	FROM AnalyticsWork.dbo.pre_combine_production_scores_rf fs
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON fs.bane_player_id = pl.id 
 		AND pl.is_deleted = 0
@@ -376,7 +379,7 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_production_percentile') IS NOT NULL
 	DROP TABLE #temp_pre_combine_production_percentile
 
 	SELECT fs.*
-		,(position_count - final_prediction_rank) / CAST(position_count AS FLOAT) as production_percentile
+		,(position_count - average_prediction_rank) / CAST(position_count AS FLOAT) as production_percentile
 	INTO #temp_pre_combine_production_percentile
 	FROM #temp_pre_combine_production fs
 	INNER JOIN #temp_pre_combine_production_pos_counts po
@@ -404,22 +407,22 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_final_buckets') IS NOT NULL
 		,component_grades_percentile
 		,production_prediction
 		,production_percentile
-		,CASE WHEN final_prediction_percentile >= percentile_80 THEN 8.0
-			WHEN final_prediction_percentile >= percentile_70 THEN 7.0
-			WHEN final_prediction_percentile >= percentile_69 THEN 6.9
-			WHEN final_prediction_percentile >= percentile_67 THEN 6.7
-			WHEN final_prediction_percentile >= percentile_65 THEN 6.5
-			WHEN final_prediction_percentile >= percentile_64 THEN 6.4
-			WHEN final_prediction_percentile >= percentile_63 THEN 6.3
-			WHEN final_prediction_percentile >= percentile_62 THEN 6.2
-			WHEN final_prediction_percentile >= percentile_61 THEN 6.1
-			WHEN final_prediction_percentile >= percentile_59 THEN 5.9
-			WHEN final_prediction_percentile >= percentile_58 THEN 5.8			
-			WHEN final_prediction_percentile >= percentile_57 THEN 5.7
-			WHEN final_prediction_percentile >= percentile_56 THEN 5.6
-			WHEN final_prediction_percentile >= percentile_54 THEN 5.4
+		,CASE WHEN average_prediction_percentile >= percentile_80 THEN 8.0
+			WHEN average_prediction_percentile >= percentile_70 THEN 7.0
+			WHEN average_prediction_percentile >= percentile_69 THEN 6.9
+			WHEN average_prediction_percentile >= percentile_67 THEN 6.7
+			WHEN average_prediction_percentile >= percentile_65 THEN 6.5
+			WHEN average_prediction_percentile >= percentile_64 THEN 6.4
+			WHEN average_prediction_percentile >= percentile_63 THEN 6.3
+			WHEN average_prediction_percentile >= percentile_62 THEN 6.2
+			WHEN average_prediction_percentile >= percentile_61 THEN 6.1
+			WHEN average_prediction_percentile >= percentile_59 THEN 5.9
+			WHEN average_prediction_percentile >= percentile_58 THEN 5.8			
+			WHEN average_prediction_percentile >= percentile_57 THEN 5.7
+			WHEN average_prediction_percentile >= percentile_56 THEN 5.6
+			WHEN average_prediction_percentile >= percentile_54 THEN 5.4
 			ELSE 5.0
-		END AS final_prediction_bucket		
+		END AS average_prediction_bucket		
 	INTO #temp_pre_combine_final_buckets
 	FROM #temp_pre_combine_final_scores_percentile fs
 	INNER JOIN #temp_board_percentiles pp
@@ -665,8 +668,8 @@ IF OBJECT_ID('tempdb..#temp_draft_model_grades') IS NOT NULL
 		,component_grades_prediction AS [component_grades_number]
 		,ROUND(component_grades_percentile * 100,0) AS [component_grades_percentile]
 		,NULL AS [component_grades_grade_id]
-		,ISNULL(mo.production_prediction,ps.production_score) AS [production_number]
-		,ISNULL(ROUND(mo.production_percentile * 100,0),ROUND(ps.production_percentile * 100,0)) AS [production_percentile]
+		,ISNULL(ps.production_score,mo.production_prediction) AS [production_number]
+		,ISNULL(ROUND(ps.production_percentile * 100,0),ROUND(mo.production_percentile * 100,0)) AS [production_percentile]
 		,NULL AS [production_grade_id]
 		,average_prediction AS [model_without_board_score]
 		,gr.id AS [model_without_board_grade_id]
@@ -677,7 +680,7 @@ IF OBJECT_ID('tempdb..#temp_draft_model_grades') IS NOT NULL
 	INTO #temp_draft_model_grades
 	FROM #temp_pre_combine_final_buckets mo
 	LEFT JOIN BaneProductionAnalytics.dbo.grades gr
-		ON mo.final_prediction_bucket = gr.[value]
+		ON mo.average_prediction_bucket = gr.[value]
 		AND gr.scale_id = 4
 		AND gr.[name] NOT LIKE '%specialist%'
 	LEFT JOIN #temp_production_scores ps
@@ -704,7 +707,17 @@ WHERE draft_model_year = 2020
 
 INSERT INTO Analytics.dbo.analysis_players_draft_model_grades
 	SELECT *
+	FROM Analytics.dbo.analysis_players_draft_model_grades_20200210
+	WHERE position IN ('DT','DE','OB')
+		AND draft_model_year = 2020
+		AND draft_model_version = 'PRE_COMBINE'
+		AND draft_model_type = 'SALARIES'
+
+INSERT INTO Analytics.dbo.analysis_players_draft_model_grades
+	SELECT *
 	FROM #temp_draft_model_grades
+	WHERE position NOT IN ('DT','DE','OB')
+
 */
 
 
@@ -734,8 +747,8 @@ IF OBJECT_ID('tempdb..#temp_overall_comps') IS NOT NULL
 		,si.match_number AS similarity_score_rank_position
 		,2020 AS draft_model_year
 	INTO #temp_overall_comps
-	FROM AnalyticsWork.dbo.pre_combine_player_similarity_ids si
-	INNER JOIN AnalyticsWork.dbo.pre_combine_player_similarity_distances dd
+	FROM AnalyticsWork.dbo.pre_combine_player_similarity_ids_rf si
+	INNER JOIN AnalyticsWork.dbo.pre_combine_player_similarity_distances_rf dd
 		ON si.bane_player_id = dd.bane_player_id
 		AND si.match_number = dd.match_number
 	INNER JOIN #temp_draft_model_grades mo
