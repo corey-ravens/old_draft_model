@@ -34,12 +34,12 @@ IF OBJECT_ID('tempdb..##temp_evaluations_3_to_7') IS NOT NULL
 	DROP TABLE ##temp_evaluations_3_to_7
 
     SELECT re.id AS report_id
-	      ,author_id AS scout_id
-		  ,player_id
-		  ,CASE WHEN re.position_id IS NULL THEN -999 ELSE re.position_id END AS position_id
-		  ,ev.[id] AS evaluation_id
+          ,author_id AS scout_id
+          ,player_id
+          ,CASE WHEN re.position_id IS NULL THEN -999 ELSE re.position_id END AS position_id
+          ,ev.[id] AS evaluation_id
 		  ,CASE WHEN ev.skill_id IN (1370,1389) THEN 1370
-		        WHEN ev.skill_id IN (1414,1418) THEN 1414
+			    WHEN ev.skill_id IN (1414,1418) THEN 1414
 				WHEN ev.skill_id IN (1448,1363) THEN 1448
 				WHEN ev.skill_id IN (1364,1449) THEN 1364
 				WHEN ev.skill_id IN (1426,1446) THEN 1426
@@ -47,55 +47,57 @@ IF OBJECT_ID('tempdb..##temp_evaluations_3_to_7') IS NOT NULL
 				WHEN ev.skill_id IN (1420,1400) THEN 1420
 				WHEN ev.skill_id IN (1416,1411) THEN 1416
 				ELSE ev.skill_id
-		   END AS skill_id
-		  ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'CF-CMP'
-		        WHEN ev.skill_id IN (1414,1418) THEN 'PS-PASS/R'
-				WHEN ev.skill_id IN (1448,1363) THEN 'PS-BLOCK'
-				WHEN ev.skill_id IN (1364,1449) THEN 'PS-HNDS'
-				WHEN ev.skill_id IN (1426,1446) THEN 'PS-PRESS/K/MENT'
-				WHEN ev.skill_id IN (1401,1397) THEN 'PS-REL'
-				WHEN ev.skill_id IN (1420,1400) THEN 'PS-SUS/RUNB'
-				WHEN ev.skill_id IN (1416,1411) THEN 'PS-SHD/B/HNDS'
-				ELSE sk.[code]
-		   END AS skill_code
-		  ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'critical factors'
-		        WHEN ev.skill_id IN (1414,1418) THEN 'position specifics'
-				WHEN ev.skill_id IN (1448,1363) THEN 'position specifics'
-				WHEN ev.skill_id IN (1364,1449) THEN 'position specifics'
-				WHEN ev.skill_id IN (1426,1446) THEN 'position specifics'
-				WHEN ev.skill_id IN (1401,1397) THEN 'position specifics'
-				WHEN ev.skill_id IN (1420,1400) THEN 'position specifics'
-				WHEN ev.skill_id IN (1416,1411) THEN 'position specifics'
-				ELSE sk.[type]
-		   END AS skill_type
-		  ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'Competitiveness'
-		        WHEN ev.skill_id IN (1414,1418) THEN 'Pass Rush Ability'
-				WHEN ev.skill_id IN (1448,1363) THEN 'Blocking'
-				WHEN ev.skill_id IN (1364,1449) THEN 'Hands'
-				WHEN ev.skill_id IN (1426,1446) THEN 'Pressure Kicks / Mental Stability'
-				WHEN ev.skill_id IN (1401,1397) THEN 'Release'
-				WHEN ev.skill_id IN (1420,1400) THEN 'Sustain / Run Blocking'
-				WHEN ev.skill_id IN (1416,1411) THEN 'Shed Blockers / Use of Hands'
-				ELSE sk.[name]
-		   END AS skill_name
-		  ,CAST(gr.value AS FLOAT) AS value		 
+			END AS skill_id
+           ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'CF-CMP'
+                 WHEN ev.skill_id IN (1414,1418) THEN 'PS-PASS/R'
+                 WHEN ev.skill_id IN (1448,1363) THEN 'PS-BLOCK'
+                 WHEN ev.skill_id IN (1364,1449) THEN 'PS-HNDS'
+                 WHEN ev.skill_id IN (1426,1446) THEN 'PS-PRESS/K/MENT'
+                 WHEN ev.skill_id IN (1401,1397) THEN 'PS-REL'
+                 WHEN ev.skill_id IN (1420,1400) THEN 'PS-SUS/RUNB'
+                 WHEN ev.skill_id IN (1416,1411) THEN 'PS-SHD/B/HNDS'
+                 ELSE sk.[code]
+            END AS skill_code
+           ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'critical factors'
+                 WHEN ev.skill_id IN (1414,1418) THEN 'position specifics'
+                 WHEN ev.skill_id IN (1448,1363) THEN 'position specifics'
+                 WHEN ev.skill_id IN (1364,1449) THEN 'position specifics'
+                 WHEN ev.skill_id IN (1426,1446) THEN 'position specifics'
+                 WHEN ev.skill_id IN (1401,1397) THEN 'position specifics'
+                 WHEN ev.skill_id IN (1420,1400) THEN 'position specifics'
+                 WHEN ev.skill_id IN (1416,1411) THEN 'position specifics'
+                 ELSE sk.[type]
+            END AS skill_type
+           ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'Competitiveness'
+                 WHEN ev.skill_id IN (1414,1418) THEN 'Pass Rush Ability'
+                 WHEN ev.skill_id IN (1448,1363) THEN 'Blocking'
+                 WHEN ev.skill_id IN (1364,1449) THEN 'Hands'
+                 WHEN ev.skill_id IN (1426,1446) THEN 'Pressure Kicks / Mental Stability'
+                 WHEN ev.skill_id IN (1401,1397) THEN 'Release'
+                 WHEN ev.skill_id IN (1420,1400) THEN 'Sustain / Run Blocking'
+                 WHEN ev.skill_id IN (1416,1411) THEN 'Shed Blockers / Use of Hands'
+                 ELSE sk.[name]
+            END AS skill_name
+           ,CAST(gr.value AS FLOAT) AS value            
 	  INTO ##temp_evaluations_3_to_7
       FROM [bane_production_analytics].[dbo].[reports] re
+INNER JOIN [bane_production_analytics].[dbo].[taggings] t 
+		ON t.taggable_id = re.id and t.taggable_type = 'Report' and t.tag_id = 11
  LEFT JOIN [bane_production_analytics].[dbo].[evaluations] ev
-        ON re.id=ev.report_id
+	    ON re.id=ev.report_id
  LEFT JOIN [bane_production_analytics].[dbo].[skills] sk
         ON ev.skill_id=sk.id
  LEFT JOIN [bane_production_analytics].[dbo].[grades] gr
-        ON ev.grade_id=gr.id		
-	 WHERE 1=1
-	   AND UPPER(LTRIM(RTRIM(re.[type]))) IN ('CROSS-CHECK','DRAFT','FALL','POST CC')
-	   AND is_deleted = 0
+		ON ev.grade_id=gr.id            
+     WHERE 1=1
+       AND is_deleted = 0
 -------Below limits to only position specific, critical factor, and STICD grades on the 3 to 7 scale
-	   AND gr.scale_id = 5
+       AND gr.scale_id = 5
   ORDER BY re.id
           ,ev.id
-		  ,sk.id
-		  ,gr.id
+          ,sk.id
+          ,gr.id
+
 
 --SELECT distinct position_id FROM ##temp_evaluations_3_to_7
 
@@ -105,42 +107,46 @@ IF OBJECT_ID('tempdb..##temp_evaluations_overall') IS NOT NULL
 	DROP TABLE ##temp_evaluations_overall
 
     SELECT re.id AS report_id
-	      ,author_id AS scout_id
-		  ,player_id
-		  ,CASE WHEN re.position_id IS NULL THEN -999 ELSE re.position_id END AS position_id
-		  ,NULL AS evaluation_id
-		  ,-999 AS skill_id
-		  ,'GRADE' AS skill_code
-		  ,NULL AS skill_type
-		  ,NULL AS skill_name
-		  ,CASE WHEN CAST(gr.value AS NUMERIC (3,1)) IN (8.0) THEN 100
-		        WHEN CAST(gr.value AS NUMERIC (3,1)) IN (7.0) THEN 92
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.9) THEN 82
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.7,6.5) THEN 71
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.3) THEN 64
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.1,6.0) THEN 58
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.9) THEN 53.5
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.8) THEN 50
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.7) THEN 47
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.6) THEN 45.5
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.4) THEN 43
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.2) THEN 41
-				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.0) THEN 40
-				ELSE NULL
-		   END AS value		 
-	  INTO ##temp_evaluations_overall
+          ,author_id AS scout_id
+          ,player_id
+          ,CASE WHEN re.position_id IS NULL THEN -999 ELSE re.position_id END AS position_id
+          ,NULL AS evaluation_id
+          ,-999 AS skill_id
+          ,'GRADE' AS skill_code
+          ,NULL AS skill_type
+          ,NULL AS skill_name
+          ,CASE WHEN CAST(gr.value AS NUMERIC (3,1)) IN (8.0) THEN 100
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (7.0) THEN 92
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.9) THEN 82
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.7,6.5) THEN 71
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.3) THEN 64
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.1,6.0) THEN 58
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.9) THEN 53.5
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.8) THEN 50
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.7) THEN 47
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.6) THEN 45.5
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.4) THEN 43
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.2) THEN 41
+                WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.0) THEN 40
+                ELSE NULL
+           END AS value            
+      INTO ##temp_evaluations_overall
       FROM [bane_production_analytics].[dbo].[reports] re
+INNER JOIN [bane_production_analytics].[dbo].[taggings] t 
+        ON t.taggable_id = re.id 
+	  AND t.taggable_type = 'Report' 
+	  AND t.tag_id = 11
  LEFT JOIN [bane_production_analytics].[dbo].[grades] gr
-        ON re.grade_id=gr.id		
-	 WHERE 1=1
-	   AND is_deleted = 0
-	   AND UPPER(LTRIM(RTRIM(re.[type]))) IN ('CROSS-CHECK','DRAFT','FALL','POST CC')
+        ON re.grade_id=gr.id            
+     WHERE 1=1
+       AND is_deleted = 0
 -------Below limits to only overall grades
-	   AND gr.scale_id IN (4,6)
+          AND gr.scale_id IN (4,6)
   ORDER BY re.id     
-		  ,gr.id
+          ,gr.id
 
---SELECT * FROM ##temp_evaluations_overall
+
+--SELECT * FROM ##temp_evaluations_overall where player_id=11519
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -195,7 +201,7 @@ IF OBJECT_ID('tempdb..##temp_evaluations_adjusted') IS NOT NULL
 	   AND ev.skill_id = sg.skill_id	
 	   AND ev.position_id = sg.position_id
 
---SELECT * FROM ##temp_evaluations_adjusted
+--SELECT * FROM ##temp_evaluations_adjusted where player_id=11519
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
