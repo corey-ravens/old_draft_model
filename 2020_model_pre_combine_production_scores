@@ -1,0 +1,159 @@
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Get the production model scores into one table.
+
+OUTPUT TABLES:
+#temp_production_scores
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_production_scores exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_production_scores') IS NOT NULL
+	DROP TABLE #temp_production_scores
+
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'OC' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_OC_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_OC_production_2020_v1]) AS FLOAT) AS production_percentile
+	INTO #temp_production_scores
+	FROM [AnalyticsWork].[dbo].[sarah_OC_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'OG' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_OG_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_OG_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_OG_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'OT' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_OT_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_OT_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_OT_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'QB' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_QB_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_QB_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_QB_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.ncaa_gsis_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'RB' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_RB_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_RB_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_RB_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'TE' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_TE_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_TE_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_TE_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'WR' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_WR_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_WR_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_WR_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'DC' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_DC_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_DC_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_DC_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'DE' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_DE_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_DE_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_DE_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.ncaa_gsis_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'DS' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_DS_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_DS_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_DS_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'DT' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_DT_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_DT_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_DT_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.ncaa_gsis_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'IB' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_IB_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_IB_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_IB_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.ncaa_gsis_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
+	INSERT INTO #temp_production_scores
+	SELECT DISTINCT pl.id AS bane_player_id
+		,'OB' AS position
+		,[pct_of_cap] AS production_score
+		,((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_OB_production_2020_v1]) - RANK() OVER (ORDER BY [pct_of_cap] DESC)) / CAST((SELECT COUNT(*) FROM [AnalyticsWork].[dbo].[sarah_OB_production_2020_v1]) AS FLOAT) AS production_percentile
+	FROM [AnalyticsWork].[dbo].[sarah_OB_production_2020_v1] mo
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mo.ncaa_gsis_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+
+
