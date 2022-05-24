@@ -18,6 +18,7 @@ And other scouts (Andrew) who tend to view the lower players to have lower avera
 v2 adds in the grade flags
 v3 is for 2018 draft, it adds injured players salaries and updates the component skills, ids, etc.
 v4 changes min to the "blended" max
+v5 has some slight updates for 2019 rather than 2018 draft
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -31,6 +32,9 @@ OUTPUT TABLES:
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
+DECLARE @current_season INT
+SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+
 -- Check if #temp_injured_salaries exists, if it does drop it
 IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
 	DROP TABLE #temp_injured_salaries
@@ -39,9 +43,9 @@ IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
 		,MAX([SalaryFit]) AS salaries
 	INTO #temp_injured_salaries
 	FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r1
-	WHERE report_week = 17
-		AND report_season = 2017
-		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 17 AND r2.report_season = 2017)
+	WHERE report_week = 6
+		AND report_season = @current_season
+		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 6 AND r2.report_season = @current_season)
 	GROUP BY PlayerID
 
 
@@ -49,9 +53,9 @@ IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
 	SELECT PlayerID AS nfl_player_id
 		,MAX([SalaryFit]) AS salaries
 	FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r1
-	WHERE report_week = 17
-		AND report_season = 2017
-		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 17 AND r2.report_season = 2017)
+	WHERE report_week = 6
+		AND report_season = @current_season
+		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 6 AND r2.report_season = @current_season)
 	GROUP BY PlayerID
 
 
@@ -64,6 +68,70 @@ IF OBJECT_ID('tempdb..#temp_injured_salaries_one_row') IS NOT NULL
 	INTO #temp_injured_salaries_one_row
 	FROM #temp_injured_salaries
 	GROUP BY nfl_player_id
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Remove players who haven't yet been drafted from the pro grades table.
+
+OUTPUT TABLES:
+#temp_pro_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_pro_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pro_grades') IS NOT NULL
+	DROP TABLE #temp_pro_grades
+
+	SELECT pg.*
+	INTO #temp_pro_grades
+	FROM Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON pg.bane_player_id = pl.id
+		AND pl.is_deleted = 0
+	WHERE draft_year <= @current_Season
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Add bane_player_id to the season position tables
+
+OUTPUT TABLES:
+#temp_season_position_offense
+#temp_season_position_defense
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_season_position_offense exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_season_position_offense') IS NOT NULL
+	DROP TABLE #temp_season_position_offense
+
+	SELECT nfl_player_id
+		,pl.id AS bane_player_id
+		,season
+		,receiver_type
+	INTO #temp_season_position_offense
+	FROM Analytics.dbo.analysis_players_season_position_offense po
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON po.nfl_player_id = pl.nfl_id
+		AND pl.is_deleted = 0
+	WHERE season_type_adjusted = 'REGPOST'
+
+-- Check if #temp_season_position_defense exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_season_position_defense') IS NOT NULL
+	DROP TABLE #temp_season_position_defense
+
+	SELECT nfl_player_id
+		,pl.id AS bane_player_id
+		,season
+		,position_blt AS position_defense
+	INTO #temp_season_position_defense
+	FROM Analytics.dbo.analysis_players_season_position_defense pd
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON pd.nfl_player_id = pl.nfl_id
+		AND pl.is_deleted = 0
+	WHERE season_type_adjusted = 'REGPOST'
+		AND defense_type = 'ALL'
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -81,7 +149,10 @@ IF OBJECT_ID('tempdb..#temp_draft_board_positions') IS NOT NULL
 	DROP TABLE #temp_draft_board_positions
 
 	SELECT player_id
-		,position
+		,CASE WHEN position_translation IN ('RUSH','SAM') THEN 'OB'
+			WHEN position_translation IN ('FS','SS') THEN 'DS'
+			ELSE position_translation
+		END AS position
 		,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
 			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
 			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
@@ -91,7 +162,10 @@ IF OBJECT_ID('tempdb..#temp_draft_board_positions') IS NOT NULL
 	END AS order_by
 	INTO #temp_draft_board_positions
 	FROM [BaneProductionAnalytics].[dbo].[draft_board_grades]
-	WHERE position != '' AND position IS NOT NULL
+	WHERE position != ''
+		AND position IS NOT NULL
+		AND player_id <> 64668
+		AND position_translation NOT IN ('RS','ST')
 
 
 -- Check if #temp_draft_board_positions_with_order exists, if it does drop it
@@ -243,7 +317,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_3_to_7') IS NOT NULL
        AND gr.scale_id = 5 --(it is a 3-7 component grade)
 	   AND re.[type] IN ('fall','all star game','cross-check','post cc')
 	   --AND MONTH(re.created_at) IN (6,7,8,9,10,11,12,1,2,3,4)
-	   AND draft_year <= @current_season + 1
+	   AND draft_year <= @current_season + 2
 
 /*
 SELECT *
@@ -304,7 +378,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_overall') IS NOT NULL
 		AND re.[type] IN ('fall','all star game','cross-check','post cc')
 		--AND MONTH(re.created_at) IN (6,7,8,9,10,11,12,1,2,3,4)
 		AND draft_year >= 2005
-		AND draft_year <= @current_season + 1
+		AND draft_year <= @current_season + 2
 
 
 /*
@@ -333,6 +407,21 @@ IF OBJECT_ID('tempdb..#temp_evaluations_append') IS NOT NULL
 	INSERT INTO #temp_evaluations_append
 	SELECT *
 	FROM #temp_evaluations_overall
+
+--Add cover grades for Rashan Gary
+INSERT INTO #temp_evaluations_append VALUES (51972475,122,'NEW',230831,2019,'OB',NULL,1536,'PS-COVABIL/RANGE','position specifics','Cover Ability / Range',5.5)
+INSERT INTO #temp_evaluations_append VALUES (51974977,95,'NEW',230831,2019,'OB',NULL,1536,'PS-COVABIL/RANGE','position specifics','Cover Ability / Range',6)
+INSERT INTO #temp_evaluations_append VALUES (51975703,4,'NEW',230831,2019,'OB',NULL,1536,'PS-COVABIL/RANGE','position specifics','Cover Ability / Range',5)
+
+--Add pursuit grades for Rashan Gary
+INSERT INTO #temp_evaluations_append VALUES (51972475,122,'NEW',230831,2019,'OB',NULL,1419,'PS-PUR','position specifics','Pursuit',5)
+INSERT INTO #temp_evaluations_append VALUES (51974977,95,'NEW',230831,2019,'OB',NULL,1419,'PS-PUR','position specifics','Pursuit',5)
+INSERT INTO #temp_evaluations_append VALUES (51975703,4,'NEW',230831,2019,'OB',NULL,1419,'PS-PUR','position specifics','Pursuit',6)
+
+--Add run defense/shed grades for Rashan Gary
+INSERT INTO #temp_evaluations_append VALUES (51972475,122,'NEW',230831,2019,'OB',NULL,1535,'PS-POAR/SHEDB','position specifics','POA Run / Shed Blockers',6)
+INSERT INTO #temp_evaluations_append VALUES (51974977,95,'NEW',230831,2019,'OB',NULL,1535,'PS-POAR/SHEDB','position specifics','POA Run / Shed Blockers',5.5)
+INSERT INTO #temp_evaluations_append VALUES (51975703,4,'NEW',230831,2019,'OB',NULL,1535,'PS-POAR/SHEDB','position specifics','POA Run / Shed Blockers',6)
 
 /*
 SELECT u.last_name, o.*
@@ -464,9 +553,9 @@ Analytics.dbo.r_input_post_combine_grades_to_adjust
 DECLARE @current_season INT
 SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
 
-DELETE FROM Analytics.dbo.r_input_draft_model_post_combine_grades_to_adjust
-WHERE draft_model_year = @current_season + 1
-	AND created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_post_combine_grades_to_adjust WHERE draft_model_year = @current_season)
+--DELETE FROM Analytics.dbo.r_input_draft_model_post_combine_grades_to_adjust
+--WHERE draft_model_year = @current_season + 1
+	--AND created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_post_combine_grades_to_adjust WHERE draft_model_year = @current_season)
 
 INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades_to_adjust
 	SELECT report_id
@@ -519,6 +608,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_adjusted') IS NOT NULL
 		AND ev.grade_distribution = ga.grade_distribution
 		AND ev.skill_type = ga.skill_type
 		AND ev.position = ga.position
+		AND ga.created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_output_draft_model_post_combine_grade_adjustments)
 	LEFT JOIN #temp_evaluations_scout_counts sc
 		ON ev.scout_id = sc.scout_id
 		AND ev.grade_distribution = sc.grade_distribution
@@ -528,7 +618,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_adjusted') IS NOT NULL
 /*
 SELECT *
 FROM #temp_evaluations_adjusted
-WHERE bane_player_id IN (48730,67847,73542,87917,58615)
+WHERE bane_player_id IN (48730,67847,73542,87917,58615,257484)
 */
 
 
@@ -824,77 +914,9 @@ FROM #temp_evaluations_pivot_mean
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Add bane_player_id to the season position tables
-
-OUTPUT TABLES:
-#temp_season_position_offense
-#temp_season_position_defense
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_season_position_offense exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_season_position_offense') IS NOT NULL
-	DROP TABLE #temp_season_position_offense
-
-	SELECT nfl_player_id
-		,pl.id AS bane_player_id
-		,season
-		,receiver_type
-	INTO #temp_season_position_offense
-	FROM Analytics.dbo.analysis_players_season_position_offense po
-	INNER JOIN BaneProductionAnalytics.dbo.players pl
-		ON po.nfl_player_id = pl.nfl_id
-		AND pl.is_deleted = 0
-	WHERE season_type_adjusted = 'REGPOST'
-
--- Check if #temp_season_position_defense exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_season_position_defense') IS NOT NULL
-	DROP TABLE #temp_season_position_defense
-
-	SELECT nfl_player_id
-		,pl.id AS bane_player_id
-		,season
-		,position_blt AS position_defense
-	INTO #temp_season_position_defense
-	FROM Analytics.dbo.analysis_players_season_position_defense pd
-	INNER JOIN BaneProductionAnalytics.dbo.players pl
-		ON pd.nfl_player_id = pl.nfl_id
-		AND pl.is_deleted = 0
-	WHERE season_type_adjusted = 'REGPOST'
-		AND defense_type = 'ALL'
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Remove players who haven't yet been drafted from the pro grades table.
-
-OUTPUT TABLES:
-#temp_pro_grades
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
---DECLARE @current_season INT
---SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
-
--- Check if #temp_pro_grades exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_pro_grades') IS NOT NULL
-	DROP TABLE #temp_pro_grades
-
-	SELECT pg.*
-	INTO #temp_pro_grades
-	FROM Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
-	INNER JOIN BaneProductionAnalytics.dbo.players pl
-		ON pg.bane_player_id = pl.id
-		AND pl.is_deleted = 0
-	WHERE draft_year <= @current_season
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
 Join his pivoted college grades to the pivoted pro grades table.
 
 OUTPUT TABLES:
-
 Analytics.dbo.r_input_draft_model_post_combine_grades
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -919,11 +941,11 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades
 			WHEN COALESCE(pg.position,pn.translation) = 'WR' AND receiver_type = 'SLOT' THEN 999
 			ELSE COALESCE(pg.position_id,pl.position_id)
 		END AS position_id 
-		,CASE WHEN COALESCE(pg.position,pn.translation) = 'OH' THEN 'RB'
+		,CASE WHEN COALESCE(pg.position,dbp.position,pn.translation) = 'OH' THEN 'RB'
 			WHEN pg.position = 'DE' AND (pn.abbreviation = 'DE43' OR position_defense = 'DE43') THEN 'OB'
-			WHEN COALESCE(pg.position,pn.translation) = 'DC' AND position_defense = 'NB' THEN 'DC_SLOT'
-			WHEN COALESCE(pg.position,pn.translation) = 'WR' AND receiver_type = 'SLOT' THEN 'WR_SLOT'
-			ELSE COALESCE(pg.position,pn.translation)
+			WHEN COALESCE(pg.position,dbp.position,pn.translation) = 'DC' AND position_defense = 'NB' THEN 'DC_SLOT'
+			WHEN COALESCE(pg.position,dbp.position,pn.translation) = 'WR' AND receiver_type = 'SLOT' THEN 'WR_SLOT'
+			ELSE COALESCE(pg.position,dbp.position,pn.translation)
 		END AS position
 		,grade_overall_max
 		,grade_overall_mean
@@ -1096,6 +1118,7 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades
 		,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
 		,@current_season + 1 AS draft_model_year
 		,GETDATE() AS created_date
+		,0 AS with_coach_grades
 	FROM #temp_evaluations_pivot_mean ep_mean
 	INNER JOIN #temp_evaluations_pivot_min ep_min
 		ON ep_mean.bane_player_id = ep_min.bane_player_id
@@ -1109,10 +1132,11 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades
 	LEFT JOIN AnalyticsWork.dbo.salaries_for_modeling sal
 		ON ep_mean.bane_player_id = sal.id
 		--AND sal.salaries NOT IN ('Injured','Pre-2011')
-	LEFT JOIN #temp_pro_grades pg
-		ON ep_mean.bane_player_id = pg.bane_player_id
 	LEFT JOIN #temp_injured_salaries_one_row ins
 		ON pl.nfl_id = ins.nfl_player_id
+	LEFT JOIN #temp_pro_grades pg
+		ON ep_mean.bane_player_id = pg.bane_player_id
+		AND pg.created_date = (SELECT MAX(created_date) FROM #temp_pro_grades)
 	LEFT JOIN AnalyticsWork.dbo.scout_grade_flags sf
 		ON ep_mean.bane_player_id = sf.bane_player_id
 	LEFT JOIN #temp_season_position_offense poff
@@ -1121,11 +1145,15 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades
 	LEFT JOIN #temp_season_position_defense pdef
 		ON pg.bane_player_id = pdef.bane_player_id
 		AND pg.season = pdef.season
+	LEFT JOIN #temp_draft_board_positions_latest dbp
+		ON ep_mean.bane_player_id = dbp.player_id
 	WHERE pl.draft_year <= @current_Season
 		OR (pl.draft_year IN (@current_Season + 1,@current_Season + 2) AND pg.season IS NULL)
 
 /*
 SELECT *
 FROM Analytics.dbo.r_input_draft_model_post_combine_grades
-WHERE bane_player_id IN (48730,67847,73542,87917,58615)
+WHERE bane_player_id IN (48730,67847,73542,87917,58615,257484)
+	AND draft_model_year = 2019
+	AND season_in_league = 1
 */
