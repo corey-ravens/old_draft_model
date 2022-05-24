@@ -15,14 +15,8 @@ So this could potentially lead to some scouts (Eric, Chad, Vince) who tend to vi
 
 And other scouts (Andrew) who tend to view the lower players to have lower average grades
 
-***************************
-
-For the fields that have been merged into one (hands/ballawareness for DBs, POA run/ shed handuse for LBs) take the average before doing the
-overll scout averages, don't use them as separate when calculating player min/mean/max over all scouts)
-
-***************************
-
-
+v2 changes from doing z scores by skill id to skill type
+v3 adds in the step of taking the average for the merged grades like hands / ball awareness and shed / poa run
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -329,28 +323,28 @@ WHERE bane_player_id = 34953
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Append the overall grades to the 3 to 7 scale grades and insert them into the table for R.
+Append the overall grades to the 3 to 7 scale grades.
 
 OUTPUT TABLES:
-#temp_evaluations_master
+#temp_evaluations_append
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
--- Check if #temp_evaluations_master exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_evaluations_master') IS NOT NULL
-	DROP TABLE #temp_evaluations_master
+-- Check if #temp_evaluations_append exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_evaluations_append') IS NOT NULL
+	DROP TABLE #temp_evaluations_append
 
 	SELECT *
-	INTO #temp_evaluations_master
+	INTO #temp_evaluations_append
 	FROM #temp_evaluations_3_to_7
 
-	INSERT INTO #temp_evaluations_master
+	INSERT INTO #temp_evaluations_append
 	SELECT *
 	FROM #temp_evaluations_overall
 
 /*
 SELECT u.last_name, o.*
-FROM #temp_evaluations_master o
+FROM #temp_evaluations_append o
 inner join BaneProductionAnalytics.dbo.users u
 on o.scout_id = u.id
 WHERE bane_player_id = 8947
@@ -362,13 +356,13 @@ Take the skill id average in each report. This takes care of the fields that hav
 hands and ball awareness merging together into ball awareness for DBs).
 
 OUTPUT TABLES:
-#temp_evaluations_merge
+#temp_evaluations_master
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
--- Check if #temp_evaluations_merge exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_evaluations_merge') IS NOT NULL
-	DROP TABLE #temp_evaluations_merge
+-- Check if #temp_evaluations_master exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_evaluations_master') IS NOT NULL
+	DROP TABLE #temp_evaluations_master
 
 	SELECT report_id
 		,scout_id
@@ -376,19 +370,30 @@ IF OBJECT_ID('tempdb..#temp_evaluations_merge') IS NOT NULL
 		,bane_player_id
 		,draft_year
 		,position		
-		,evaluation_id
+		--,evaluation_id
 		,skill_id
 		,skill_code
 		,skill_type
 		,skill_name
 		,AVG([value]) AS [value]
-	INTO #temp_evaluations_merge
-	FROM #temp_evaluations_overall
+	INTO #temp_evaluations_master
+	FROM #temp_evaluations_append
+	GROUP BY report_id
+		,scout_id
+		,grade_distribution
+		,bane_player_id
+		,draft_year
+		,position		
+		--,evaluation_id
+		,skill_id
+		,skill_code
+		,skill_type
+		,skill_name
 
 /*
 SELECT *
-FROM #temp_evaluations_merge
-WHERE bane_player_id = 8947
+FROM #temp_evaluations_master
+WHERE bane_player_id = 50418
 */
 
 
@@ -457,13 +462,13 @@ Analytics.dbo.work_r_input_pre_combine_grades_to_adjust
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 DECLARE @current_season INT
-SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start) + 1
+SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
 
-DELETE FROM Analytics.dbo.work_r_input_pre_combine_grades_to_adjust WHERE draft_model_year = @current_season
+DELETE FROM Analytics.dbo.work_r_input_pre_combine_grades_to_adjust WHERE draft_model_year = @current_season + 1
 
 INSERT INTO Analytics.dbo.work_r_input_pre_combine_grades_to_adjust
 	SELECT *
-		,@current_season AS draft_model_year
+		,@current_season + 1 AS draft_model_year
 	FROM #temp_evaluations_updated
 	WHERE skill_name NOT IN ('Durability','Size','Speed','Playing Speed')
 
@@ -491,7 +496,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_adjusted') IS NOT NULL
 	DROP TABLE #temp_evaluations_adjusted
 
 	SELECT ev.*
-		,ISNULL((value - evaluation_mean) / NULLIF(evaluation_stdev,0),0) AS value_z_score
+		,(value - evaluation_mean) / NULLIF(evaluation_stdev,0) AS value_z_score
 		,CASE WHEN ev.scout_id = 2 THEN value ELSE value - COALESCE(adjustment,0) END AS value_adjusted --Scout ID 2 does not get a grade adjustment, it is the zero in the regression
 	INTO #temp_evaluations_adjusted
 	FROM #temp_evaluations_master ev
@@ -509,8 +514,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_adjusted') IS NOT NULL
 /*
 SELECT *
 FROM #temp_evaluations_adjusted
---WHERE EVALUATION_ID is not null
-WHERE bane_player_id = 3412
+WHERE bane_player_id = 82021
 */
 
 
@@ -812,9 +816,9 @@ Analytics.dbo.work_r_input_pre_combine_grades
 DECLARE @current_season INT
 SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
 
---TRUNCATE TABLE Analytics.dbo.work_r_input_pre_combine_grades
+TRUNCATE TABLE Analytics.dbo.work_r_input_pre_combine_grades
 
---INSERT INTO Analytics.dbo.work_r_input_pre_combine_grades
+INSERT INTO Analytics.dbo.work_r_input_pre_combine_grades
 	SELECT ep_mean.bane_player_id
 		,CONCAT(pl.last_name,', ',pl.goes_by) AS player
 		,CASE WHEN pl.draft_year <= @current_season THEN pl.draft_year
@@ -980,6 +984,20 @@ SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_y
 		,intangibles_on_field_character_max
 		,intangibles_on_field_character_mean
 		,intangibles_on_field_character_min
+		,CASE WHEN [A] > 0 THEN 1 ELSE 0 END AS flag_a
+		,CASE WHEN [B] > 0 THEN 1 ELSE 0 END AS flag_b
+		,CASE WHEN [C] > 0 THEN 1 ELSE 0 END AS flag_c
+		,CASE WHEN [D] > 0 THEN 1 ELSE 0 END AS flag_d
+		,CASE WHEN [E] > 0 THEN 1 ELSE 0 END AS flag_e
+		,CASE WHEN [F] > 0 THEN 1 ELSE 0 END AS flag_f
+		,CASE WHEN [M] > 0 THEN 1 ELSE 0 END AS flag_m
+		,CASE WHEN [O] > 0 THEN 1 ELSE 0 END AS flag_o
+		,CASE WHEN [P] > 0 THEN 1 ELSE 0 END AS flag_p
+		,CASE WHEN [S] > 0 THEN 1 ELSE 0 END AS flag_s
+		,CASE WHEN [T] > 0 THEN 1 ELSE 0 END AS flag_t
+		,CASE WHEN [U] > 0 THEN 1 ELSE 0 END AS flag_u
+		,CASE WHEN [X] > 0 THEN 1 ELSE 0 END AS flag_x
+		,CASE WHEN [Z] > 0 THEN 1 ELSE 0 END AS flag_y
 		,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(CAST(sal.salaries AS FLOAT),CAST(ins.salaries AS FLOAT),0) END AS pct_of_cap
 		,season
 		,CASE WHEN pl.draft_year > @current_season THEN 1 ELSE season_in_league END AS season_in_league
@@ -1001,9 +1019,13 @@ SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_y
 		ON ep_mean.bane_player_id = pg.bane_player_id
 	LEFT JOIN #temp_injured_salaries_one_row ins
 		ON pl.nfl_id = ins.nfl_player_id
+	LEFT JOIN AnalyticsWork.dbo.scout_grade_flags sf
+		ON ep_mean.bane_player_id = sf.bane_player_id
+	WHERE pl.draft_year <= @current_Season
+		OR (pl.draft_year IN (@current_Season + 1,@current_Season + 2) AND pg.season IS NULL)
 
 /*
 SELECT *
 FROM Analytics.dbo.work_r_input_pre_combine_grades
-WHERE player = 'Young, Tavon'
+WHERE player = 'Flacco, Joe'
 */
