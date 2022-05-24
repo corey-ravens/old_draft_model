@@ -5,7 +5,8 @@
 
 This is the code for creating the post combine measurables data tables.
 
-v3 adds fill in data
+v3 adds fill in vs expected data
+v4 adds fill in data
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -485,8 +486,10 @@ IF OBJECT_ID('tempdb..#temp_advanced_measurables') IS NOT NULL
 		  ,CONVERT(DECIMAL(20,6),long_shuttle - expected_long_shuttle) AS long_shuttle_vs_expected
 		  ,CONVERT(DECIMAL(20,6),short_shuttle - expected_short_shuttle) AS short_shuttle_vs_expected
 		  ,CONVERT(DECIMAL(20,6),fill_in_short_shuttle - expected_short_shuttle) AS fill_in_short_shuttle_vs_expected
+		  ,CONVERT(DECIMAL(20,6),fill_in_short_shuttle) AS fill_in_short_shuttle
 		  ,CONVERT(DECIMAL(20,6),three_cone - expected_three_cone) AS three_cone_vs_expected
 		  ,CONVERT(DECIMAL(20,6),fill_in_three_cone - expected_three_cone) AS fill_in_three_cone_vs_expected
+		  ,CONVERT(DECIMAL(20,6),fill_in_three_cone) AS fill_in_three_cone
 		  ,CONVERT(DECIMAL(20,6),broad_jump - expected_broad_jump) AS broad_jump_vs_expected
 		  ,CONVERT(DECIMAL(20,6),vertical_jump - expected_vertical_jump) AS vertical_jump_vs_expected
 		  ,CONVERT(DECIMAL(20,6),bench_reps - expected_bench_reps) AS bench_reps_vs_expected
@@ -553,9 +556,11 @@ OUTPUT TABLES:
 							  ,flying_ten_vs_expected
 							  ,short_shuttle_vs_expected
 							  ,fill_in_short_shuttle_vs_expected
+							  ,fill_in_short_shuttle
 							  ,long_shuttle_vs_expected
 							  ,three_cone_vs_expected
 							  ,fill_in_three_cone_vs_expected
+							  ,fill_in_three_cone
 							  ,swim_right_vs_expected
 							  ,rip_left_vs_expected
 							  ,left_turn_vs_expected
@@ -725,11 +730,13 @@ IF OBJECT_ID('tempdb..#temp_advanced_measurables_pivot') IS NOT NULL
 		  ,short_shuttle
 		  ,short_shuttle_vs_expected
 		  ,fill_in_short_shuttle_vs_expected
+		  ,fill_in_short_shuttle
 		  ,long_shuttle
 		  ,long_shuttle_vs_expected
 		  ,three_cone
 		  ,three_cone_vs_expected
 		  ,fill_in_three_cone_vs_expected
+		  ,fill_in_three_cone
 		  ,swim_right
 		  ,swim_right_vs_expected
 		  ,rip_left
@@ -747,8 +754,8 @@ IF OBJECT_ID('tempdb..#temp_advanced_measurables_pivot') IS NOT NULL
 		  ,order_for_models
 		  ,measurable_type
 		  ,value
-      FROM #temp_advanced_measurables_all WHERE measurable_type IN ('height', 'weight', 'arm_length', 'wingspan', 'hand_size', 'broad_jump', 'broad_jump_vs_expected', 'vertical_jump', 'vertical_jump_vs_expected', 'bench_reps', 'bench_reps_vs_expected', 'bench_work', 'bench_work_vs_expected', 'wonderlic', 'throw_speed', 'throw_speed_vs_expected', 'forty_dash', 'forty_dash_vs_expected', 'twenty_split', 'twenty_split_vs_expected', 'ten_split', 'ten_split_vs_expected', 'flying_twenty', 'flying_twenty_vs_expected', 'flying_ten', 'flying_ten_vs_expected', 'short_shuttle', 'short_shuttle_vs_expected', 'fill_in_short_shuttle_vs_expected', 'long_shuttle', 'long_shuttle_vs_expected', 'three_cone', 'three_cone_vs_expected', 'fill_in_three_cone_vs_expected', 'swim_right', 'swim_right_vs_expected', 'rip_left', 'rip_left_vs_expected', 'right_turn', 'right_turn_vs_expected', 'left_turn', 'left_turn_vs_expected')) up
-     PIVOT (MAX(value) FOR measurable_type IN ([height], [weight], [arm_length], [wingspan], [hand_size], [broad_jump], [broad_jump_vs_expected], [vertical_jump], [vertical_jump_vs_expected], [bench_reps], [bench_reps_vs_expected], [bench_work], [bench_work_vs_expected], [wonderlic], [throw_speed], [throw_speed_vs_expected], [forty_dash], [forty_dash_vs_expected], [twenty_split], [twenty_split_vs_expected], [ten_split], [ten_split_vs_expected], [flying_twenty], [flying_twenty_vs_expected], [flying_ten], [flying_ten_vs_expected], [short_shuttle], [short_shuttle_vs_expected], [fill_in_short_shuttle_vs_expected], [long_shuttle], [long_shuttle_vs_expected], [three_cone], [three_cone_vs_expected], [fill_in_three_cone_vs_expected], [swim_right], [swim_right_vs_expected], [rip_left], [rip_left_vs_expected], [right_turn], [right_turn_vs_expected], [left_turn], [left_turn_vs_expected])) AS pvt
+      FROM #temp_advanced_measurables_all WHERE measurable_type IN ('height', 'weight', 'arm_length', 'wingspan', 'hand_size', 'broad_jump', 'broad_jump_vs_expected', 'vertical_jump', 'vertical_jump_vs_expected', 'bench_reps', 'bench_reps_vs_expected', 'bench_work', 'bench_work_vs_expected', 'wonderlic', 'throw_speed', 'throw_speed_vs_expected', 'forty_dash', 'forty_dash_vs_expected', 'twenty_split', 'twenty_split_vs_expected', 'ten_split', 'ten_split_vs_expected', 'flying_twenty', 'flying_twenty_vs_expected', 'flying_ten', 'flying_ten_vs_expected', 'short_shuttle', 'short_shuttle_vs_expected', 'fill_in_short_shuttle_vs_expected', 'fill_in_short_shuttle', 'long_shuttle', 'long_shuttle_vs_expected', 'three_cone', 'three_cone_vs_expected', 'fill_in_three_cone_vs_expected', 'fill_in_three_cone', 'swim_right', 'swim_right_vs_expected', 'rip_left', 'rip_left_vs_expected', 'right_turn', 'right_turn_vs_expected', 'left_turn', 'left_turn_vs_expected')) up
+     PIVOT (MAX(value) FOR measurable_type IN ([height], [weight], [arm_length], [wingspan], [hand_size], [broad_jump], [broad_jump_vs_expected], [vertical_jump], [vertical_jump_vs_expected], [bench_reps], [bench_reps_vs_expected], [bench_work], [bench_work_vs_expected], [wonderlic], [throw_speed], [throw_speed_vs_expected], [forty_dash], [forty_dash_vs_expected], [twenty_split], [twenty_split_vs_expected], [ten_split], [ten_split_vs_expected], [flying_twenty], [flying_twenty_vs_expected], [flying_ten], [flying_ten_vs_expected], [short_shuttle], [short_shuttle_vs_expected], [fill_in_short_shuttle_vs_expected], [fill_in_short_shuttle], [long_shuttle], [long_shuttle_vs_expected], [three_cone], [three_cone_vs_expected], [fill_in_three_cone_vs_expected], [fill_in_three_cone], [swim_right], [swim_right_vs_expected], [rip_left], [rip_left_vs_expected], [right_turn], [right_turn_vs_expected], [left_turn], [left_turn_vs_expected])) AS pvt
 	 WHERE order_for_models = 1
   ORDER BY bane_player_id
   
