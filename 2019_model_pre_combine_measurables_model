@@ -8,6 +8,7 @@ and weight AND 40 time because that is all you have at that point.
 
 v2 changes to take weight that goes along with the best 40 time.
 v3 adds in slot WR and CB and salary for injured players
+v4 adds in the step to remove players not yet drafted from the first 4 seasons pro grades table
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -302,6 +303,28 @@ IF OBJECT_ID('tempdb..#temp_season_position_defense') IS NOT NULL
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Remove players who haven't yet been drafted from the pro grades table.
+
+OUTPUT TABLES:
+#temp_pro_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_pro_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pro_grades') IS NOT NULL
+	DROP TABLE #temp_pro_grades
+
+	SELECT pg.*
+	INTO #temp_pro_grades
+	FROM Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON pg.bane_player_id = pl.id
+		AND pl.is_deleted = 0
+	WHERE draft_year <= @iSeason
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 Join his measurable summary 40 time and position graded as to the pivoted measurables table.
 
 OUTPUT TABLES:
@@ -351,7 +374,7 @@ INSERT INTO Analytics.dbo.work_r_input_pre_combine_measurables
 	LEFT JOIN AnalyticsWork.dbo.salaries_for_modeling sal
 		ON mp.bane_player_id = sal.id
 		AND sal.salaries NOT IN ('Injured','Pre-2011')
-	LEFT JOIN Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
+	LEFT JOIN #temp_pro_grades pg
 		ON mp.bane_player_id = pg.bane_player_id
 	LEFT JOIN #temp_average_ages aa
 		ON pl.draft_year = aa.draft_year
