@@ -8,7 +8,7 @@ This is the code for creating the advanced measurables.
 It also finds similar players because many of the advanced
 measurables are used in the SimScore model.
 
-v6 - Replaced "forty_time" with "dash_forty" (and similar variable name replacement)
+v10 eliminated player measurables that came from regional combines and workouts after their draft year.
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -78,7 +78,7 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 				WHEN re.id != 1 AND UPPER(re.[description]) LIKE '%ELECTRONIC%' THEN 2
 				WHEN re.id IN (4,5) THEN 4
 				WHEN re.id IS NULL THEN CASE WHEN wt.[type] = 'COMB' THEN 3 
-											 WHEN wt.[type] IN ('RCOMB','ALLSTAR','APT','SRCOMB','PDAY','LW','PW') THEN 4
+											 WHEN wt.[type] IN ('RCOM','ALLS','APT','SRCO','PDAY','LW','PW') THEN 4
 											 ELSE NULL
 											 END
 				ELSE NULL
@@ -87,7 +87,7 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 		  ,me.measurable_type_id
 		  ,mt.code
 		  ,CASE WHEN re.id IS NULL THEN CASE WHEN wt.[type] = 'COMB' THEN 2
-		                                     WHEN wt.[type] IN ('RCOMB','ALLSTAR','APT','SRCOMB','PDAY') THEN 5
+		                                     WHEN wt.[type] IN ('RCOM','ALLS','APT','SRCO','PDAY') THEN 5
 											 WHEN wt.[type] IN ('LW','PW') THEN 4
 											 ELSE NULL
 										END	  
@@ -105,15 +105,19 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 		ON wo.player_workout_type_id=wt.id
  LEFT JOIN [bane_production_analytics].[dbo].[reliabilities] re
 		ON me.reliability_id=re.id
-	 WHERE (re.translation IN ('I','V','W') OR wt.[type] IN ('COMB','RCOMB','ALLSTAR','APT','SRCOMB','PDAY','LW','PW'))
+ LEFT JOIN [bane_production_analytics].[dbo].[players] pl
+		ON wo.player_id=pl.id
+	 WHERE (re.translation IN ('I','V','W') OR wt.[type] IN ('COMB','RCOM','ALLS','APT','SRCO','PDAY','LW','PW'))
 	   AND NOT (wt.[type] = 'RPT' AND re.translation = 'I')
 	   AND value IS NOT NULL
+-------Next line is to take out workouts that come in regional combines / workouts after their draft years
+	   AND NOT (YEAR(wo.[date]) > nfl_entry_year AND wt.[type] IN ('RCOM','SRCO','LW','PW'))
   ORDER BY wo.player_id
           ,wo.id
 		  ,me.measurable_type_id
 		  ,re.id
 
---SELECT * FROM ##temp_measurables_master where player_id=4648
+--SELECT * FROM ##temp_measurables_master where player_id=607
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1512,7 +1516,7 @@ IF OBJECT_ID('tempdb..##temp_measurables_with_order') IS NOT NULL
           ,workout_id
 		  ,code
 
---SELECT * FROM ##temp_measurables_with_order where code in ('ArmLngCnv','StrengthReps225','BenchWorkJoules')
+--SELECT * FROM ##temp_measurables_with_order where player_id=34960
 
 
 
@@ -1746,12 +1750,12 @@ IF OBJECT_ID('tempdb..##temp_runs_player_no_wgt') IS NOT NULL
     SELECT player_id
 	      ,workout_id
 		  ,workout_type_for_models
-		  ,measurable_order_by_model_type
+		  ,measurable_order_by_workout
 		  ,code
 		  ,value
       FROM ##temp_measurables_with_order WHERE code IN ('40YTime', '20YTime', '10YTime', '20YShuttle', '3Cone', '60YShuttle', 'Flying10Time', 'Flying20Time','SpeedScoreCohen','BodyMassIndex')) up
      PIVOT (MIN(value) FOR code IN ([40YTime], [20YTime], [10YTime], [20YShuttle], [3Cone], [60YShuttle], [Flying10Time], [Flying20Time], [SpeedScoreCohen], [BodyMassIndex])) AS pvt
-	 WHERE measurable_order_by_model_type=1
+	 WHERE measurable_order_by_workout=1
   ORDER BY player_id, workout_id  
 
  --SELECT * FROM ##temp_runs_player_no_wgt
@@ -1913,7 +1917,7 @@ IF OBJECT_ID('tempdb..##temp_measures_no_wgt') IS NOT NULL
 		  ,[JumpVertPower] AS jump_vertical_power
 		  ,[JumpVertPowerKubiak] AS jump_vertical_power_kubiak
 		  ,[JumpVertPowerSpags] AS jump_vertical_power_spags
-		  ,[LateralAgilityScore] AS lateral_agility_score
+		  ,[LateralAgility] AS lateral_agility_score
 		  ,[LengthVertical] AS length_vertical
 		  ,[LengthVerticalWithJump] AS length_vertical_with_jump
 		  ,[Momentum10] AS momentum_ten
@@ -1941,8 +1945,8 @@ IF OBJECT_ID('tempdb..##temp_measures_no_wgt') IS NOT NULL
 		  ,measurable_order_all_with_reliabilty
 		  ,code
 		  ,value
-      FROM ##temp_measurables_with_order WHERE code IN ('HgtCnv', 'ArmLngCnv', 'WSpanCnv', 'HSpanCnv', 'BroadJumpCnv', 'StrengthReps225', 'BenchWorkJoules', 'VertJumpCnv', 'TestScore', 'Acceleration10', 'Acceleration20', 'Acceleration40', 'ArmRadius', 'ExplosionIndex' ,'ExplosionLower', 'JumpBroadPowerSandy', 'JumpCombined', 'JumpVertPower', 'JumpVertPowerKubiak', 'JumpVertPowerSpags', 'LateralAgilityScore', 'LengthVertical', 'LengthVerticalWithJump', 'Momentum10', 'Momentum20', 'Momentum40', 'RatioArmToHeight', 'RatioWingToHeight', 'SpeedScoreAdjusted', 'SpeedScoreBarnwell', 'Velocity10', 'Velocity20', 'Velocity40', 'Work10Sandy', 'Work20Sandy', 'Work40Sandy', 'Power10', 'Power20', 'Power40')) up
-     PIVOT (MAX(value) FOR code IN ([HgtCnv], [ArmLngCnv], [WSpanCnv], [HSpanCnv], [BroadJumpCnv], [StrengthReps225], [BenchWorkJoules], [VertJumpCnv], [TestScore], [Acceleration10], [Acceleration20], [Acceleration40], [ArmRadius], [ExplosionIndex] ,[ExplosionLower], [JumpBroadPowerSandy], [JumpCombined], [JumpVertPower], [JumpVertPowerKubiak], [JumpVertPowerSpags], [LateralAgilityScore], [LengthVertical], [LengthVerticalWithJump], [Momentum10], [Momentum20], [Momentum40], [RatioArmToHeight], [RatioWingToHeight], [SpeedScoreAdjusted], [SpeedScoreBarnwell], [Velocity10], [Velocity20], [Velocity40], [Work10Sandy], [Work20Sandy], [Work40Sandy], [Power10], [Power20], [Power40])) AS pvt
+      FROM ##temp_measurables_with_order WHERE code IN ('HgtCnv', 'ArmLngCnv', 'WSpanCnv', 'HSpanCnv', 'BroadJumpCnv', 'StrengthReps225', 'BenchWorkJoules', 'VertJumpCnv', 'TestScore', 'Acceleration10', 'Acceleration20', 'Acceleration40', 'ArmRadius', 'ExplosionIndex' ,'ExplosionLower', 'JumpBroadPowerSandy', 'JumpCombined', 'JumpVertPower', 'JumpVertPowerKubiak', 'JumpVertPowerSpags', 'LateralAgility', 'LengthVertical', 'LengthVerticalWithJump', 'Momentum10', 'Momentum20', 'Momentum40', 'RatioArmToHeight', 'RatioWingToHeight', 'SpeedScoreAdjusted', 'SpeedScoreBarnwell', 'Velocity10', 'Velocity20', 'Velocity40', 'Work10Sandy', 'Work20Sandy', 'Work40Sandy', 'Power10', 'Power20', 'Power40')) up
+     PIVOT (MAX(value) FOR code IN ([HgtCnv], [ArmLngCnv], [WSpanCnv], [HSpanCnv], [BroadJumpCnv], [StrengthReps225], [BenchWorkJoules], [VertJumpCnv], [TestScore], [Acceleration10], [Acceleration20], [Acceleration40], [ArmRadius], [ExplosionIndex] ,[ExplosionLower], [JumpBroadPowerSandy], [JumpCombined], [JumpVertPower], [JumpVertPowerKubiak], [JumpVertPowerSpags], [LateralAgility], [LengthVertical], [LengthVerticalWithJump], [Momentum10], [Momentum20], [Momentum40], [RatioArmToHeight], [RatioWingToHeight], [SpeedScoreAdjusted], [SpeedScoreBarnwell], [Velocity10], [Velocity20], [Velocity40], [Work10Sandy], [Work20Sandy], [Work40Sandy], [Power10], [Power20], [Power40])) AS pvt
 	 WHERE measurable_order_all_with_reliabilty=1
   ORDER BY player_id, workout_id
 
@@ -2123,7 +2127,7 @@ IF OBJECT_ID('tempdb..##temp_measures_master_no_wgt') IS NOT NULL
 		  ,[JumpVertPower] AS jump_vertical_power
 		  ,[JumpVertPowerKubiak] AS jump_vertical_power_kubiak
 		  ,[JumpVertPowerSpags] AS jump_vertical_power_spags
-		  ,[LateralAgilityScore] AS lateral_agility_score
+		  ,[LateralAgility] AS lateral_agility_score
 		  ,[LengthVertical] AS length_vertical
 		  ,[LengthVerticalWithJump] AS length_vertical_with_jump
 		  ,[Momentum10] AS momentum_ten
@@ -2147,12 +2151,12 @@ IF OBJECT_ID('tempdb..##temp_measures_master_no_wgt') IS NOT NULL
       SELECT player_id
 	      ,workout_id
 		  ,workout_type_for_models
-		  ,measurable_order_by_model_type
+		  ,measurable_order_by_workout=1
 		  ,code
 		  ,value
-      FROM ##temp_measurables_with_order WHERE code IN ('HgtCnv', 'ArmLngCnv', 'WSpanCnv', 'HSpanCnv', 'BroadJumpCnv', 'StrengthReps225', 'BenchWorkJoules', 'VertJumpCnv', 'TestScore', 'Acceleration10', 'Acceleration20', 'Acceleration40', 'ArmRadius', 'ExplosionIndex' ,'ExplosionLower', 'JumpBroadPowerSandy', 'JumpCombined', 'JumpVertPower', 'JumpVertPowerKubiak', 'JumpVertPowerSpags', 'LateralAgilityScore', 'LengthVertical', 'LengthVerticalWithJump', 'Momentum10', 'Momentum20', 'Momentum40', 'RatioArmToHeight', 'RatioWingToHeight', 'SpeedScoreAdjusted', 'SpeedScoreBarnwell', 'Velocity10', 'Velocity20', 'Velocity40', 'Work10Sandy', 'Work20Sandy', 'Work40Sandy', 'Power10', 'Power20', 'Power40')) up
-     PIVOT (MAX(value) FOR code IN ([HgtCnv], [ArmLngCnv], [WSpanCnv], [HSpanCnv], [BroadJumpCnv], [StrengthReps225], [BenchWorkJoules], [VertJumpCnv], [TestScore], [Acceleration10], [Acceleration20], [Acceleration40], [ArmRadius], [ExplosionIndex] ,[ExplosionLower], [JumpBroadPowerSandy], [JumpCombined], [JumpVertPower], [JumpVertPowerKubiak], [JumpVertPowerSpags], [LateralAgilityScore], [LengthVertical], [LengthVerticalWithJump], [Momentum10], [Momentum20], [Momentum40], [RatioArmToHeight], [RatioWingToHeight], [SpeedScoreAdjusted], [SpeedScoreBarnwell], [Velocity10], [Velocity20], [Velocity40], [Work10Sandy], [Work20Sandy], [Work40Sandy], [Power10], [Power20], [Power40])) AS pvt
-	 WHERE measurable_order_by_model_type=1
+      FROM ##temp_measurables_with_order WHERE code IN ('HgtCnv', 'ArmLngCnv', 'WSpanCnv', 'HSpanCnv', 'BroadJumpCnv', 'StrengthReps225', 'BenchWorkJoules', 'VertJumpCnv', 'TestScore', 'Acceleration10', 'Acceleration20', 'Acceleration40', 'ArmRadius', 'ExplosionIndex' ,'ExplosionLower', 'JumpBroadPowerSandy', 'JumpCombined', 'JumpVertPower', 'JumpVertPowerKubiak', 'JumpVertPowerSpags', 'LateralAgility', 'LengthVertical', 'LengthVerticalWithJump', 'Momentum10', 'Momentum20', 'Momentum40', 'RatioArmToHeight', 'RatioWingToHeight', 'SpeedScoreAdjusted', 'SpeedScoreBarnwell', 'Velocity10', 'Velocity20', 'Velocity40', 'Work10Sandy', 'Work20Sandy', 'Work40Sandy', 'Power10', 'Power20', 'Power40')) up
+     PIVOT (MAX(value) FOR code IN ([HgtCnv], [ArmLngCnv], [WSpanCnv], [HSpanCnv], [BroadJumpCnv], [StrengthReps225], [BenchWorkJoules], [VertJumpCnv], [TestScore], [Acceleration10], [Acceleration20], [Acceleration40], [ArmRadius], [ExplosionIndex] ,[ExplosionLower], [JumpBroadPowerSandy], [JumpCombined], [JumpVertPower], [JumpVertPowerKubiak], [JumpVertPowerSpags], [LateralAgility], [LengthVertical], [LengthVerticalWithJump], [Momentum10], [Momentum20], [Momentum40], [RatioArmToHeight], [RatioWingToHeight], [SpeedScoreAdjusted], [SpeedScoreBarnwell], [Velocity10], [Velocity20], [Velocity40], [Work10Sandy], [Work20Sandy], [Work40Sandy], [Power10], [Power20], [Power40])) AS pvt
+	 WHERE measurable_order_by_workout=1
   ORDER BY player_id, workout_id
   
  --SELECT * FROM ##temp_measures_master_no_wgt
@@ -2858,6 +2862,11 @@ The reason we join player information to both the scout and model
 tables separately is because the model table uses nfl_id while the
 scout table uses the Bane player_id.
 
+At some point, try to figure out a way to get rid of players who only
+have one 2.0 grade for his season.  You need to exclude 2.0s when 
+finding the average, but then if a player only has one, he is getting
+assigned a 50 for the season when you assign 50 to all nulls.
+
 OUTPUT TABLES:
 ##temp_pro_grades_scout
 
@@ -3064,19 +3073,43 @@ IF OBJECT_ID('tempdb..##temp_measurables_with_pro_grades') IS NOT NULL
 		  ,CASE WHEN COALESCE(grade_scaled_mean,50) < 50 THEN 50
 		        ELSE COALESCE(grade_scaled_mean,50)
 		   END AS grade_scaled
+		  ,CASE WHEN dbg.position != '' AND dbg.position IS NOT NULL THEN CASE WHEN dbg.position IN ('OB','RUSH','SAM','DP') THEN 'OB'
+																	           WHEN dbg.position IN ('DS','FS','SS') THEN 'DS'
+																			   ELSE UPPER(LTRIM(RTRIM(dbg.position)))
+																		  END
+		        ELSE CASE WHEN pos.abbreviation IN ('WR') THEN 'WO'
+				          WHEN pos.abbreviation IN ('RB') THEN 'OH'
+						  WHEN pos.abbreviation IN ('ROG','LOG','OL') THEN 'OG'
+						  WHEN pos.abbreviation IN ('ROT','LOT') THEN 'OT'
+						  WHEN pos.abbreviation IN ('MB','ILB','WB','LB','4-3 WILL') THEN 'IB'
+						  WHEN pos.abbreviation IN ('ROLB','LOLB','OLB','SB','RUSH','4-3 DE','4-3 SAM','SAM') THEN 'OB'
+						  WHEN pos.abbreviation IN ('NB','DB') THEN 'DC'
+						  WHEN pos.abbreviation IN ('RDE','LDE') THEN 'DE'
+						  WHEN pos.abbreviation IN ('NT','DL','NG') THEN 'DT'
+						  WHEN pos.abbreviation IN ('SS','FS') THEN 'DS'
+						  ELSE UPPER(LTRIM(RTRIM(pos.abbreviation)))
+					 END
+		   END AS position_draft_board
 	  INTO ##temp_measurables_with_pro_grades
 	  FROM ##temp_measurables_for_modeling me
  LEFT JOIN ##temp_pro_grades_season pg
         ON pg.player_id = me.player_id
-	 WHERE player_season_in_league <=4
+INNER JOIN [bane_production_analytics].[dbo].[players] pl
+        ON me.player_id = pl.id
+ LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
+        ON pl.position_id = pos.id
+ LEFT JOIN ##temp_draft_board_positions_with_order dbg
+        ON me.player_id = dbg.player_id
+		AND dbg.draft_board_position_order = 1
+	 WHERE (player_season_in_league <=4
+	   AND player_season_in_league !=0)
+	    OR player_season_in_league IS NULL
 
 --SELECT * FROM ##temp_measurables_with_pro_grades
 
---check two players from the original measurables table to this final table
---then go to R!
 
 
-select last_name, first_name, id from bane_production_analytics.dbo.players where last_name='Lofton' and first_name='Curtis'
+
 
 
 
@@ -3162,8 +3195,24 @@ IF OBJECT_ID('tempdb..##temp_runs_compare') IS NOT NULL
 		  ,w3.shuttle_short_z_score_best AS shuttle_short_z_score_best_hand_other
 		  ,w3.shuttle_long_z_score_best AS shuttle_long_z_score_best_hand_other
 		  ,w3.three_cone_z_score_best AS three_cone_z_score_best_hand_other
-
-	  INTO ##temp_runs_compare
+		  ,CASE WHEN dbg.position != '' AND dbg.position IS NOT NULL THEN CASE WHEN dbg.position IN ('OB','RUSH','SAM','DP') THEN 'OB'
+																	           WHEN dbg.position IN ('DS','FS','SS') THEN 'DS'
+																			   ELSE UPPER(LTRIM(RTRIM(dbg.position)))
+																		  END
+		        ELSE CASE WHEN pos.abbreviation IN ('WR') THEN 'WO'
+				          WHEN pos.abbreviation IN ('RB') THEN 'OH'
+						  WHEN pos.abbreviation IN ('ROG','LOG','OL') THEN 'OG'
+						  WHEN pos.abbreviation IN ('ROT','LOT') THEN 'OT'
+						  WHEN pos.abbreviation IN ('MB','ILB','WB','LB','4-3 WILL') THEN 'IB'
+						  WHEN pos.abbreviation IN ('ROLB','LOLB','OLB','SB','RUSH','4-3 DE','4-3 SAM','SAM') THEN 'OB'
+						  WHEN pos.abbreviation IN ('NB','DB') THEN 'DC'
+						  WHEN pos.abbreviation IN ('RDE','LDE') THEN 'DE'
+						  WHEN pos.abbreviation IN ('NT','DL','NG') THEN 'DT'
+						  WHEN pos.abbreviation IN ('SS','FS') THEN 'DS'
+						  ELSE UPPER(LTRIM(RTRIM(pos.abbreviation)))
+					 END
+		   END AS position_draft_board
+	  --INTO ##temp_runs_compare
 	  FROM ##temp_runs_best_z w1
 LEFT JOIN ##temp_runs_best_z w2
 	    ON w1.player_id=w2.player_id
@@ -3171,11 +3220,18 @@ LEFT JOIN ##temp_runs_best_z w2
 LEFT JOIN ##temp_runs_best_z w3
 	    ON w1.player_id=w3.player_id
 	   AND w3.workout_type_for_models=4
+
+INNER JOIN [bane_production_analytics].[dbo].[players] pl
+        ON w1.player_id = pl.id
+ LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
+        ON pl.position_id = pos.id
+ LEFT JOIN ##temp_draft_board_positions_with_order dbg
+        ON w1.player_id = dbg.player_id
+		AND dbg.draft_board_position_order = 1
 	 WHERE w1.workout_type_for_models=1
 
 
-
-
+	 select * from ##temp_runs_best_z
 
 
 		  
@@ -3188,7 +3244,10 @@ LEFT JOIN ##temp_runs_best_z w3
 
 
 
-
+SELECT z.* , last_name, first_name
+FROM ##temp_runs_best_z z
+INNER JOIN [bane_production_analytics].[dbo].[players] pl
+        ON z.player_id = pl.id
 
 
 
@@ -3197,105 +3256,3 @@ LEFT JOIN ##temp_runs_best_z w3
 
 ----------haven't been able to figure out the exact SPARQ formula yet, this is a "best guess" based on other efforts to nail down the formula
 ----------,161.1768022+([weight]*0.3114693)+(dash_forty*-10.72725617)+(dash_ten*-41.89231102)+(shuttle_short*-16.15717599)+(three_cone*-6.981575131)+(bench_reps*0.477821711)+(jump_vertical*1.266893465)+(jump_broad/12*6.691568906) as sparq_estimate
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
--- Assign Target Player and create all the empty variables for his measurables to go into
-
-DECLARE @player_id AS INT = 41308
-
---These variables are for his z-scores
-DECLARE @main_player_height_z_score AS NUMERIC(9,7)
-DECLARE @main_player_weight_z_score AS NUMERIC(9,7)
-DECLARE @main_player_arm_length_z_score AS NUMERIC(9,7)
-DECLARE @main_player_hand_span_z_score AS NUMERIC(9,7)
-DECLARE @main_player_wing_span_z_score AS NUMERIC(9,7)
-DECLARE @main_player_test_correct_z_score AS NUMERIC(9,7)
-DECLARE @main_player_forty_yard_dash_z_score AS NUMERIC(9,7)
-DECLARE @main_player_twenty_yard_dash_z_score AS NUMERIC(9,7)
-DECLARE @main_player_ten_yard_dash_z_score AS NUMERIC(9,7)
-DECLARE @main_player_bench_press_reps_z_score AS NUMERIC(9,7)
-DECLARE @main_player_jump_broad_z_score AS NUMERIC(9,7)
-DECLARE @main_player_three_cone_z_score AS NUMERIC(9,7)
-DECLARE @main_player_jump_vertical_z_score AS NUMERIC(9,7)
-DECLARE @main_player_shuttle_short_z_score AS NUMERIC(9,7)
-DECLARE @main_player_shuttle_long_z_score AS NUMERIC(9,7)
-DECLARE @main_player_long_snap_z_score AS NUMERIC(9,7)
-
-
--- Select the target player's measurable z-scores into the empty variables
-    SELECT @main_player_height_z_score = height_z_score
-		  ,@main_player_weight_z_score = weight_z_score
-	      ,@main_player_arm_length_z_score = arm_length_z_score
-		  ,@main_player_hand_span_z_score = hand_span_z_score
-		  ,@main_player_wing_span_z_score = wing_span_z_score
-		  ,@main_player_test_correct_z_score = test_correct_z_score
-		  ,@main_player_forty_yard_dash_z_score = forty_yard_dash_z_score
-		  ,@main_player_twenty_yard_dash_z_score = twenty_yard_dash_z_score
-		  --,@main_player_ten_yard_dash_z_score = ten_yard_dash_z_score
-		  --,@main_player_bench_press_reps_z_score = bench_press_reps_z_score
-		  ,@main_player_jump_broad_z_score = jump_broad_z_score
-		  ,@main_player_three_cone_z_score = three_cone_z_score
-		  ,@main_player_jump_vertical_z_score = jump_vertical_z_score
-		  ,@main_player_shuttle_short_z_score = shuttle_short_z_score
-		  ,@main_player_shuttle_long_z_score = shuttle_long_z_score
-		  ,@main_player_long_snap_z_score = long_snap_z_score
-      FROM ##temp_measurables_z_scores_all
-	 WHERE player_id=@player_id
-
--- Check if temp_measurables_z_scores_differences, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measurables_z_scores_differences') IS NOT NULL
-	DROP TABLE ##temp_measurables_z_scores_differences
-
--- now create a table that gets the difference between the main player and all other players (at his position only? or should we allow cross position comps?)
--- Find the z-score differences between the target player and all other players
-    SELECT player_id
-	      ,GSISID
-		  ,report_position
-	      --,first_name
-	      --,last_name
-	      ,CASE WHEN @main_player_height_z_score IS NOT NULL THEN ABS(height_z_score-@main_player_height_z_score) ELSE NULL END AS height_z_score_difference
-		  ,CASE WHEN @main_player_weight_z_score IS NOT NULL THEN ABS(weight_z_score-@main_player_weight_z_score) ELSE NULL END AS weight_z_score_difference
-	      ,CASE WHEN @main_player_arm_length_z_score IS NOT NULL THEN ABS(arm_length_z_score-@main_player_arm_length_z_score) ELSE NULL END AS arm_length_z_score_difference
-		  ,CASE WHEN @main_player_hand_span_z_score IS NOT NULL THEN ABS(hand_span_z_score-@main_player_hand_span_z_score) ELSE NULL END AS hand_span_z_score_difference
-		  ,CASE WHEN @main_player_wing_span_z_score IS NOT NULL THEN ABS(wing_span_z_score-@main_player_wing_span_z_score) ELSE NULL END AS wing_span_z_score_difference
-		  ,CASE WHEN @main_player_test_correct_z_score IS NOT NULL THEN ABS(test_correct_z_score-@main_player_test_correct_z_score) ELSE NULL END AS test_correct_z_score_difference
-		  ,CASE WHEN @main_player_forty_yard_dash_z_score IS NOT NULL THEN ABS(forty_yard_dash_z_score-@main_player_forty_yard_dash_z_score) ELSE NULL END AS forty_yard_dash_z_score_difference
-		  ,CASE WHEN @main_player_twenty_yard_dash_z_score IS NOT NULL THEN ABS(twenty_yard_dash_z_score-@main_player_twenty_yard_dash_z_score) ELSE NULL END AS twenty_yard_dash_z_score_difference
-		  --,CASE WHEN @main_player_ten_yard_dash_z_score IS NOT NULL THEN ABS(ten_yard_dash_z_score-@main_player_ten_yard_dash_z_score) ELSE NULL END AS ten_yard_dash_z_score_difference
-		  --,CASE WHEN @main_player_bench_press_reps_z_score IS NOT NULL THEN ABS(bench_press_reps_z_score-@main_player_bench_press_reps_z_score) ELSE NULL END AS bench_press_reps_z_score_difference
-		  ,CASE WHEN @main_player_jump_broad_z_score IS NOT NULL THEN ABS(jump_broad_z_score-@main_player_jump_broad_z_score) ELSE NULL END AS jump_broad_z_score_difference
-		  ,CASE WHEN @main_player_three_cone_z_score IS NOT NULL THEN ABS(three_cone_z_score-@main_player_three_cone_z_score) ELSE NULL END AS three_cone_z_score_difference
-		  ,CASE WHEN @main_player_jump_vertical_z_score IS NOT NULL THEN ABS(jump_vertical_z_score-@main_player_jump_vertical_z_score) ELSE NULL END AS jump_vertical_z_score_difference
-		  ,CASE WHEN @main_player_shuttle_short_z_score IS NOT NULL THEN ABS(shuttle_short_z_score-@main_player_shuttle_short_z_score) ELSE NULL END AS shuttle_short_z_score_difference
-		  ,CASE WHEN @main_player_shuttle_long_z_score IS NOT NULL THEN ABS(shuttle_long_z_score-@main_player_shuttle_long_z_score) ELSE NULL END AS shuttle_long_z_score_difference
-		  ,CASE WHEN @main_player_long_snap_z_score IS NOT NULL THEN ABS(long_snap_z_score-@main_player_long_snap_z_score) ELSE NULL END AS long_snap_z_score_difference
-	  INTO ##temp_measurables_z_scores_differences
-	  FROM ##temp_measurables_z_scores_all 
-	 WHERE player_id!=@player_id
-  
-    SELECT *
-      FROM ##temp_measurables_z_scores_differences zdiff
-INNER JOIN RavensIncoming.dbo.club_db_player_extracts player
-		  ON zdiff.player_id=player.id
-
-
-
-
-
