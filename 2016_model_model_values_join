@@ -1,0 +1,57 @@
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Get down to one row of draft board position. Take a players draft
+board position from as late in the process as available.  This is 
+for bucketing for z scores for later on.
+
+OUTPUT TABLES:
+##temp_draft_board_positions_with_order
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_draft_board_positions exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_draft_board_positions') IS NOT NULL
+	DROP TABLE ##temp_draft_board_positions
+
+    SELECT player_id
+	      ,draft_year
+	      ,position
+		  ,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
+		        WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
+				WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
+				ELSE NULL
+		   END AS order_by
+	 INTO ##temp_draft_board_positions
+	 FROM [bane_production_analytics].[dbo].[draft_board_grades]
+	WHERE position != '' AND position IS NOT NULL
+
+
+-- Check if ##temp_draft_board_positions_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_draft_board_positions_with_order') IS NOT NULL
+	DROP TABLE ##temp_draft_board_positions_with_order
+
+    SELECT player_id
+	      ,draft_year
+	      ,position
+	      ,RANK() OVER (PARTITION BY player_id ORDER BY order_by) AS draft_board_position_order
+	 INTO ##temp_draft_board_positions_with_order
+	 FROM ##temp_draft_board_positions
+
+--SELECT * FROM ##temp_draft_board_positions_with_order
+
+
+SELECT me.[player_id]
+      ,[position_draft_board]
+      ,[grade_scaled]
+	  ,first_name
+	  ,last_name
+	  ,COALESCE(dbg.draft_year,nfl_entry_year,pl.draft_year) as nfl_entry_year
+  FROM [AnalyticsWork].[dbo].[draft2016_measurable_model_output] me
+INNER JOIN [bane_production_analytics].[dbo].[players] pl
+        ON me.player_id = pl.id
+ LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
+        ON pl.position_id = pos.id
+ LEFT JOIN ##temp_draft_board_positions_with_order dbg
+        ON me.player_id = dbg.player_id
+		AND dbg.draft_board_position_order = 1
