@@ -1,0 +1,99 @@
+-- Check if temp_workouts_and_measurables exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_workouts_and_measurables') IS NOT NULL
+	DROP TABLE ##temp_workouts_and_measurables
+
+    SELECT [player_id]
+	      ,players.[first_name]
+		  ,players.[last_name]
+		  ,CASE WHEN [position_id] IN (7,13,27,37) THEN 27
+		        WHEN [position_id] IN (8,12,28) THEN 28
+				WHEN [position_id] IN (9,16,41) THEN 9
+				WHEN [position_id] IN (10,33,36) THEN 10
+				WHEN [position_id] IN (11,29,31,32,39) THEN 29
+				WHEN [position_id] IN (17,18,34,14,15,30) THEN 30
+				WHEN [position_id] IN (20,40) THEN 20
+				WHEN [position_id] IN (19,35) THEN 19
+				WHEN [position_id] IN (24,25,26) THEN 24
+				ELSE [position_id]
+				END AS position_id_group
+		  ,players.[draft_year]
+		  ,workouts.[id] AS workout_id
+		  ,[measurable_type_id]
+		  ,[code]
+          ,[value]
+      INTO ##temp_workouts_and_measurables
+      FROM [bane-development].[dbo].[workouts] workouts
+INNER JOIN [bane-development].[dbo].[player_workout_types] workout_types
+        ON workouts.player_workout_type_id=workout_types.id 
+INNER JOIN [bane-development].[dbo].[measurables] measurables
+        ON measurables.workout_id=workouts.id
+INNER JOIN [bane-development].[dbo].[measurable_types] measurable_types
+        ON measurables.measurable_type_id=measurable_types.id
+INNER JOIN [bane-development].[dbo].[players] players
+        ON players.id=workouts.player_id
+     WHERE workout_types.[priority] < 11
+
+-- Check if temp_workouts_and_measurables_pivot exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_workouts_and_measurables_pivot') IS NOT NULL
+	DROP TABLE ##temp_workouts_and_measurables_pivot
+
+    SELECT [player_id]
+	      ,Abs(Checksum(NewId())) % 10 AS random_number
+		  ,position_id_group
+		  ,[draft_year]
+		  ,[workout_id]
+	      ,HgtCnv AS height_converted
+	      ,Wgt AS weight
+	      ,ArmLngCnv AS arm_length_converted
+	      ,WSpanCnv AS wing_span_converted
+	      ,HSpanCnv AS hand_span_converted
+	      ,[40YTime] AS forty_time
+	      ,[20YTime] AS twenty_time
+	      ,[10YTime] AS ten_time
+	      ,VertJumpCnv AS vertical_jump_converted
+	      ,BroadJumpCnv AS broad_jump_converted
+	      ,[20YShuttle] AS short_shuttle
+	      ,[3Cone] AS three_cone
+	      ,[60YShuttle] AS long_shuttle
+	      ,StrengthReps225 AS bench_reps
+	  --INTO ##temp_workouts_and_measurables_pivot
+      FROM (
+    SELECT [player_id]
+	      ,position_id_group
+		  ,[draft_year]
+		  ,[workout_id]
+		  ,[code]
+		  ,[value]
+      FROM ##temp_workouts_and_measurables) up
+     PIVOT (MAX(value) FOR [code] IN (HgtCnv, Wgt, ArmLngCnv, WSpanCnv, HSpanCnv, [40YTime], [20YTime], [10YTime], VertJumpCnv, BroadJumpCnv, [20YShuttle], [3Cone], [60YShuttle], StrengthReps225)) AS pvt
+  ORDER BY [player_id]
+		  ,position_id_group
+          ,[random_number]
+		  ,[draft_year]
+		  ,[workout_id]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    SELECT *
+	  FROM ##temp_workouts_and_measurables_pivot
+	 WHERE random_number <= 6
+
+    SELECT *
+	  FROM ##temp_workouts_and_measurables_pivot
+	 WHERE random_number IN (7,8)
+
+    SELECT *
+	  FROM ##temp_workouts_and_measurables_pivot
+	 WHERE random_number = 9
