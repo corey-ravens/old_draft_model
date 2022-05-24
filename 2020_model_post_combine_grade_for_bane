@@ -71,7 +71,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_overall') IS NOT NULL
 		AND UPPER(re.[type]) <> 'SPECIAL TEAMS' 
 		AND translation NOT IN ('ST','PK','PT','LS')
 		AND gr.scale_id IN (4,6) --(it is an overall grade)
-		AND re.[type] IN ('fall','spring','all star game','cross-check','post cc')
+		AND re.[type] IN ('fall','cross-check','post cc')
 		AND (MONTH(re.created_at) IN (6,7,8,9,10,11,12,1) OR (MONTH(re.created_at) = 2 AND DAY(re.created_at) < 16))
 		
 
@@ -179,6 +179,45 @@ IF OBJECT_ID('tempdb..#temp_draft_boards_latest') IS NOT NULL
 	WHERE draft_board_position_order = 1
 
 
+
+
+
+-- Check if #temp_board_fill exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_board_fill') IS NOT NULL
+	DROP TABLE #temp_board_fill
+
+	SELECT DISTINCT bane_player_id
+		,position_draft_board AS position
+		,board_grade_final AS grade_bucket
+	INTO #temp_board_fill
+	FROM Analytics.dbo.r_input_draft_model_post_combine
+	WHERE draft_year >= 2016
+	ORDER BY board_grade_final DESC
+
+
+-- Check if #temp_max_college_grade exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_max_college_grade') IS NOT NULL
+	DROP TABLE #temp_max_college_grade
+
+	SELECT re.player_id AS bane_player_id	
+		,MAX(CAST(gr.[value] AS NUMERIC(3,1))) AS college_grade
+	INTO #temp_max_college_grade
+	FROM [BaneProductionAnalytics].dbo.reports re
+	LEFT JOIN [BaneProductionAnalytics].dbo.grades gr
+		ON re.grade_id = gr.id
+	WHERE re.[type] IN ('fall','cross-check','post cc')
+		AND re.is_deleted = 0
+	GROUP BY re.player_id
+
+
+
+
+
+
+
+
+
+
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 (4)
@@ -211,7 +250,7 @@ IF OBJECT_ID('tempdb..#temp_board_percentiles') IS NOT NULL
 		,(COUNT(*) - CAST(SUM(CASE WHEN grade_bucket >= 5.6 THEN 1 ELSE 0 END) AS FLOAT)) / COUNT(*) AS percentile_56
 		,(COUNT(*) - CAST(SUM(CASE WHEN grade_bucket >= 5.4 THEN 1 ELSE 0 END) AS FLOAT)) / COUNT(*) AS percentile_54
 	INTO #temp_board_percentiles
-	FROM #temp_draft_boards_latest
+	FROM #temp_board_fill
 	--WHERE report_type IN ('fall','cross-check')
 	GROUP BY position
 
@@ -246,7 +285,10 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_final_scores') IS NOT NULL
 	LEFT JOIN #temp_position_graded_as po
 		ON fs.bane_player_id = po.bane_player_id
 		AND po.position_order = 1
+	inner join #temp_max_college_grade cg
+		on fs.bane_player_id = cg.bane_player_id
 	WHERE draft_year >= 2016
+		and COLLEGE_grade >= 5.6
 
 
 -- Check if #temp_pre_combine_final_scores_pos_counts exists, if it does drop it
@@ -303,7 +345,10 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_grades') IS NOT NULL
 	LEFT JOIN #temp_position_graded_as po
 		ON fs.bane_player_id = po.bane_player_id
 		AND po.position_order = 1
+	inner join #temp_max_college_grade cg
+		on fs.bane_player_id = cg.bane_player_id
 	WHERE draft_year >= 2016
+		and COLLEGE_grade >= 5.6
 
 
 -- Check if #temp_pre_combine_grades_pos_counts exists, if it does drop it
@@ -360,7 +405,10 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_production') IS NOT NULL
 	LEFT JOIN #temp_position_graded_as po
 		ON fs.bane_player_id = po.bane_player_id
 		AND po.position_order = 1
+	inner join #temp_max_college_grade cg
+		on fs.bane_player_id = cg.bane_player_id
 	WHERE draft_year >= 2016
+		and COLLEGE_grade >= 5.6
 
 
 -- Check if #temp_pre_combine_production_pos_counts exists, if it does drop it
@@ -420,7 +468,10 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_measurables') IS NOT NULL
 	LEFT JOIN #temp_position_graded_as po
 		ON fs.bane_player_id = po.bane_player_id
 		AND po.position_order = 1
+	inner join #temp_max_college_grade cg
+		on fs.bane_player_id = cg.bane_player_id
 	WHERE draft_year >= 2016
+		and COLLEGE_grade >= 5.6
 
 
 -- Check if #temp_pre_combine_measurables_pos_counts exists, if it does drop it
@@ -671,9 +722,9 @@ Analytics.dbo.analysis_players_draft_model_similarity_scores
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-TRUNCATE TABLE Analytics.dbo.analysis_players_draft_model_similarity_scores
+--TRUNCATE TABLE Analytics.dbo.analysis_players_draft_model_similarity_scores
 
-INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
+--INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
 	SELECT target_bane_player_id
 		,comp_bane_player_id
 		,similarity_score_type
@@ -683,3 +734,41 @@ INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
 		,draft_model_year
 	FROM #temp_overall_comps
 	WHERE similarity_score_rank_position <= 10
+
+
+
+
+
+
+
+
+	SELECT PL.id
+		,CONCAT(pl.last_name,', ',pl.goes_by) as player
+		,draft_year
+		,fs.position
+		,sc.code AS school
+		,gg.[value] AS model_grade
+		,final_prediction_percentile*100 AS percentile_overall
+		,gr.component_grades_percentile*100 AS percentile_grades
+		,pp.production_percentile*100 AS percentile_production
+	FROM #temp_pre_combine_final_scores_percentile fs
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON fs.bane_player_id = pl.id
+		AND pl.is_deleted = 0
+	INNER JOIN BaneProductionAnalytics.dbo.schools sc
+		ON pl.ncaa_club_id = sc.id
+	LEFT JOIN #temp_pre_combine_grades_percentile gr
+		ON fs.bane_player_id = gr.bane_player_id
+	LEFT JOIN #temp_pre_combine_production_percentile pp
+		ON fs.bane_player_id = pp.bane_player_id
+
+	LEFT JOIN Analytics.dbo.analysis_players_draft_model_grades mg
+		ON fs.bane_player_id = mg.bane_player_id
+		AND mg.draft_model_year = 2020
+		and mg.draft_model_version = 'post_combine'
+	LEFT JOIN BaneProductionAnalytics.dbo.grades gg
+		ON mg.model_without_board_grade_id = gg.id
+	WHERE 1 = 1
+		AND fs.position in ('DS') 
+		and draft_year = 2020
+	ORDER BY final_prediction_percentile DESC,CONCAT(pl.last_name,', ',pl.goes_by) 
