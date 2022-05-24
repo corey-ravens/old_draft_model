@@ -1,57 +1,32 @@
 
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Get down to one row of draft board position. Take a players draft
-board position from as late in the process as available.  This is 
-for bucketing for z scores for later on.
-
-OUTPUT TABLES:
-##temp_draft_board_positions_with_order
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_draft_board_positions exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_draft_board_positions') IS NOT NULL
-	DROP TABLE ##temp_draft_board_positions
-
-    SELECT player_id
-	      ,draft_year
-	      ,position
-		  ,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
-		        WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
-				WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
-				ELSE NULL
-		   END AS order_by
-	 INTO ##temp_draft_board_positions
-	 FROM [bane_production_analytics].[dbo].[draft_board_grades]
-	WHERE position != '' AND position IS NOT NULL
-
-
--- Check if ##temp_draft_board_positions_with_order exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_draft_board_positions_with_order') IS NOT NULL
-	DROP TABLE ##temp_draft_board_positions_with_order
-
-    SELECT player_id
-	      ,draft_year
-	      ,position
-	      ,RANK() OVER (PARTITION BY player_id ORDER BY order_by) AS draft_board_position_order
-	 INTO ##temp_draft_board_positions_with_order
-	 FROM ##temp_draft_board_positions
-
---SELECT * FROM ##temp_draft_board_positions_with_order
-
 
 SELECT me.[player_id]
       ,[position_draft_board]
       ,[grade_scaled]
+	  ,CASE WHEN [grade_scaled] >= 96 THEN 8.0
+	        WHEN [grade_scaled] >= 90 THEN 7.0
+			WHEN [grade_scaled] >= 78.5 THEN 6.9
+			WHEN [grade_scaled] >= 67 THEN 6.7
+			WHEN [grade_scaled] >= 62 THEN 6.3
+			WHEN [grade_scaled] >= 55.5 THEN 6.1
+			WHEN [grade_scaled] >= 52 THEN 5.9
+			WHEN [grade_scaled] >= 48 THEN 5.8
+			WHEN [grade_scaled] >= 46 THEN 5.7
+			WHEN [grade_scaled] >= 43 THEN 5.6
+			WHEN [grade_scaled] >= 42 THEN 5.4
+			WHEN [grade_scaled] >= 40.5 THEN 5.2
+			WHEN [grade_scaled] IS NOT NULL THEN 5.0
+			ELSE 2.0
+	   END AS grade_college
 	  ,first_name
 	  ,last_name
 	  ,COALESCE(dbg.draft_year,nfl_entry_year,pl.draft_year) as nfl_entry_year
-  FROM [AnalyticsWork].[dbo].[draft2016_measurable_model_output] me
+  FROM [AnalyticsWork].[dbo].[draft2016_combined_model_output] me
 INNER JOIN [bane_production_analytics].[dbo].[players] pl
         ON me.player_id = pl.id
  LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
         ON pl.position_id = pos.id
- LEFT JOIN ##temp_draft_board_positions_with_order dbg
+ LEFT JOIN [AnalyticsWork].[dbo].[draft2016_draft_board_grades] dbg
         ON me.player_id = dbg.player_id
 		AND dbg.draft_board_position_order = 1
+	 WHERE grade_scaled = (SELECT MAX(grade_scaled) FROM [AnalyticsWork].[dbo].[draft2016_combined_model_output] me2 WHERE me2.player_id=me.player_id)
