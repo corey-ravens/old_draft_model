@@ -8,7 +8,7 @@ This is the code for creating the post combine measurables data tables.
 v3 adds fill in vs expected data
 v4 adds fill in data
 v5 adds elctronic forty yard dash outlier removal
-
+v6 has some slight updates for 2019 rather than 2018 draft
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -20,6 +20,9 @@ OUTPUT TABLES:
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
+DECLARE @current_season INT
+SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+
 -- Check if #temp_injured_salaries exists, if it does drop it
 IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
 	DROP TABLE #temp_injured_salaries
@@ -28,9 +31,9 @@ IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
 		,MAX([SalaryFit]) AS salaries
 	INTO #temp_injured_salaries
 	FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r1
-	WHERE report_week = 17
-		AND report_season = 2017
-		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 17 AND r2.report_season = 2017)
+	WHERE report_week = 6
+		AND report_season = @current_season
+		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 6 AND r2.report_season = @current_season)
 	GROUP BY PlayerID
 
 
@@ -38,9 +41,9 @@ IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
 	SELECT PlayerID AS nfl_player_id
 		,MAX([SalaryFit]) AS salaries
 	FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r1
-	WHERE report_week = 17
-		AND report_season = 2017
-		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 17 AND r2.report_season = 2017)
+	WHERE report_week = 6
+		AND report_season = @current_season
+		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 6 AND r2.report_season = @current_season)
 	GROUP BY PlayerID
 
 
@@ -63,9 +66,6 @@ OUTPUT TABLES:
 #temp_pro_grades
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-DECLARE @current_season INT
-SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
 
 -- Check if #temp_pro_grades exists, if it does drop it
 IF OBJECT_ID('tempdb..#temp_pro_grades') IS NOT NULL
@@ -137,15 +137,23 @@ IF OBJECT_ID('tempdb..#temp_draft_board_positions') IS NOT NULL
 	DROP TABLE #temp_draft_board_positions
 
 	SELECT player_id
-		,position
+		,CASE WHEN position_translation IN ('RUSH','SAM') THEN 'OB'
+			WHEN position_translation IN ('FS','SS') THEN 'DS'
+			ELSE position_translation
+		END AS position
 		,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
 			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
 			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-DEC' THEN 4
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DEC' THEN 5
 			ELSE NULL
 	END AS order_by
 	INTO #temp_draft_board_positions
 	FROM [BaneProductionAnalytics].[dbo].[draft_board_grades]
-	WHERE position != '' AND position IS NOT NULL
+	WHERE position != '' 
+		AND position IS NOT NULL
+		AND player_id <> 64668
+		AND position_translation NOT IN ('RS','ST')
 
 
 -- Check if #temp_draft_board_positions_with_order exists, if it does drop it
@@ -173,14 +181,15 @@ IF OBJECT_ID('tempdb..#temp_draft_board_positions_latest') IS NOT NULL
 	WHERE draft_board_position_order = 1
 
 /*
-SELECT DISTINCT position
-FROM #temp_draft_board_positions_latest
+SELECT *
+FROM #temp_draft_board_positions
+WHERE player_id = 232245
 */
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Create the master dash table for finding outliers.
+Create the master DASH table for finding outlier dashes.
 
 **Keep an eye on workouts where some times are 4 priority, some are 5. Example workout ids: 638693,638694,638696,638697,638698,638699,638700,638806,638808,638809,638810,638811
 
@@ -221,7 +230,7 @@ IF OBJECT_ID('tempdb..#temp_outlier_dash_master') IS NOT NULL
 		AND (wo.is_deleted = 0 OR (wo.is_deleted = 1 AND wo.[description] LIKE 'NCAA Scouting%')) --Not a deleted record
 		AND NOT YEAR(wo.[date]) > pl.draft_year --Not from a workout that occured after his draft
 		AND pl.draft_year >= 2005
-		AND pl.draft_year <=  2018
+		AND pl.draft_year <=  @current_season + 2
 		AND mt.code = '40YTime'
 		AND value BETWEEN 4.00 AND 7.00
 
@@ -485,7 +494,7 @@ IF OBJECT_ID('tempdb..#temp_measurables_master') IS NOT NULL
 /*
 SELECT *
 FROM #temp_measurables_master
-WHERE bane_player_id = 	89618
+WHERE bane_player_id = 90041
 ORDER BY workout_code desc, attempt, code
 */
 
@@ -798,7 +807,7 @@ Analytics.dbo.r_input_draft_model_expected_measurables
 		,right_turn
 		,rip_left
 		,swim_right
-		,2018 AS draft_model_year
+		,2019 AS draft_model_year
 		,GETDATE() AS created_date
 	FROM #temp_measurables me
 	LEFT JOIN #temp_height_fills hf
@@ -810,7 +819,8 @@ Analytics.dbo.r_input_draft_model_expected_measurables
 /*
 SELECT *
 FROM Analytics.dbo.r_input_draft_model_expected_measurables
-WHERE draft_model_year = 2018
+WHERE draft_model_year = 2019
+	AND created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_expected_measurables WHERE draft_model_year = 2019)
 ORDER BY adjusted_priority, attempt
 */
 
@@ -828,6 +838,7 @@ X:\R\college_scouting\draft_modeling\post_combine\expected_measurables\expected_
 Join the r input and output tables so you can compare actual to expected values.
 
 *****Watch for the join on created_date. R cuts the last three numbers off of the sql date time so they may not match exactly.
+*****You usually have to hard code the MAX created date from the output table to the inner join betwen the input and the output table.
 
 (Inner join to r_output removes LS, PT, PK, and NULL positions)
 
@@ -902,8 +913,8 @@ IF OBJECT_ID('tempdb..#temp_advanced_measurables') IS NOT NULL
 		AND inp.adjusted_priority = outp.adjusted_priority
 		AND inp.attempt = outp.attempt
 		AND inp.draft_model_year = outp.draft_model_year
-		AND inp.created_date = outp.created_date
-	WHERE inp.draft_model_year = 2018
+		AND outp.created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_output_draft_model_expected_measurables)
+	WHERE inp.draft_model_year = 2019
 		AND inp.created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_expected_measurables)
 
 /*
@@ -1244,6 +1255,7 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_measurables
 		,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
 		,@current_season + 1 AS draft_model_year
 		,GETDATE() AS created_date
+		,0 AS alternate_data
 	FROM #temp_advanced_measurables_pivot mp
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON mp.bane_player_id = pl.id
@@ -1255,6 +1267,7 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_measurables
 		--AND sal.salaries NOT IN ('Injured','Pre-2011')
 	LEFT JOIN #temp_pro_grades pg
 		ON mp.bane_player_id = pg.bane_player_id
+		AND pg.created_date = (SELECT MAX(created_date) FROM #temp_pro_grades)
 	LEFT JOIN #temp_injured_salaries_one_row ins
 		ON pl.nfl_id = ins.nfl_player_id
 	LEFT JOIN #temp_season_position_offense poff
@@ -1380,3 +1393,108 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_measurables
 	SET flying_ten_vs_expected = 0
 		,ten_split_vs_expected = 0
 	WHERE bane_player_id = 71450
+
+	--Add Bryce Love measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 198 AND 203) 
+		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 198 AND 203) 
+	WHERE bane_player_id = 88699
+
+	--Add Jalin Moore measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 210 AND 215) 
+		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 210 AND 215) 
+	WHERE bane_player_id = 73239
+
+	--Add Rodney Anderson measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 222 AND 227) 
+		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 222 AND 227) 
+	WHERE bane_player_id = 87228
+
+	--Add Chase Hansen measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 220 AND 225) 
+		,flying_twenty = (SELECT AVG(flying_twenty) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 220 AND 225) 
+		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 220 AND 225) 
+	WHERE bane_player_id = 89604
+
+	--Add Vosean Joseph measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 228 AND 233) 
+		,flying_twenty = (SELECT AVG(flying_twenty) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 228 AND 233) 
+		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 228 AND 233) 
+	WHERE bane_player_id = 232137
+
+	--Add David Long measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 225 AND 230) 
+		,flying_twenty = (SELECT AVG(flying_twenty) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 225 AND 230) 
+		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 225 AND 230) 
+	WHERE bane_player_id = 231572
+
+/*
+	--Add Kyler Murray measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET ten_split_vs_expected = 0
+		,flying_twenty_vs_expected = 0
+		,three_cone_vs_expected = 0
+	WHERE bane_player_id = 87653
+
+	--Add Marquise Brown measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET vertical_jump_vs_expected = 0
+		,short_shuttle_vs_expected = 0
+		,forty_dash_vs_expected = 0
+	WHERE bane_player_id = 	257484
+
+	--Add Jawaan Taylor measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET vertical_jump_vs_expected = 0
+		,ten_split_vs_expected = 0
+		,flying_twenty_vs_expected = 0
+		,flying_ten_vs_expected = 0
+		,short_shuttle_vs_expected = 0
+	WHERE bane_player_id = 232135
+
+	--Add Max Scharping measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET ten_split_vs_expected = 0
+		,flying_twenty_vs_expected = 0
+		,flying_ten_vs_expected = 0
+	WHERE bane_player_id = 82212
+
+	--Add Connor McGovern measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET ten_split_vs_expected = 0
+		,flying_twenty_vs_expected = 0
+		,flying_ten_vs_expected = 0
+		,vertical_jump_vs_expected = 0
+	WHERE bane_player_id = 231485
+
+	--Add Yodny Cajuste measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET vertical_jump_vs_expected = 0
+		,ten_split_vs_expected = 0
+		,flying_twenty_vs_expected = 0
+		,flying_ten_vs_expected = 0
+		,short_shuttle_vs_expected = 0
+	WHERE bane_player_id = 87551
+
+	--Add Ben Powers measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET ten_split_vs_expected = 0
+		,flying_twenty_vs_expected = 0
+		,flying_ten_vs_expected = 0
+	WHERE bane_player_id = 234540
+
+	--Add Dawson Knox measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET long_shuttle_vs_expected = 0
+	WHERE bane_player_id = 243695
+
+	--Add Kaden Smith measurables
+	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
+	SET long_shuttle_vs_expected = 0
+	WHERE bane_player_id = 260623
+*/
