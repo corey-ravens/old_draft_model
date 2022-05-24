@@ -1,8 +1,9 @@
+
 /*---------------------------------------------------------------------
 
 Here you are finding out if a player has measurables from a workout or 
-pro day, as we want to prioritize those measrables over all others for
-our models
+pro day, as we want to prioritize those measurables over all others for
+our models.
 
 ----------------------------------------------------------------------*/
 
@@ -11,12 +12,13 @@ IF OBJECT_ID('tempdb..##temp_combine_or_pro_day') IS NOT NULL
 	DROP TABLE ##temp_combine_or_pro_day
 
     SELECT [player_id]
+		  ,workouts.[id] as workout_id
 		  ,CASE WHEN MIN([priority]) IN (1,2) THEN 1 ELSE 0 END AS combine_or_pro_day
       INTO ##temp_combine_or_pro_day
       FROM [bane-development].[dbo].[workouts] workouts
 INNER JOIN [bane-development].[dbo].[player_workout_types] workout_types
         ON workouts.player_workout_type_id=workout_types.id 
-  GROUP BY [player_id]
+  GROUP BY [player_id], workouts.[id]
   
 
 /*---------------------------------------------------------------------
@@ -57,9 +59,13 @@ IF OBJECT_ID('tempdb..##temp_workouts_and_measurables') IS NOT NULL
 						  WHEN [position_id] = 22 THEN 'PT'
 						  WHEN [position_id] = 23 THEN 'PK'
 						  END
-				END AS [position]
+				END AS [position] 
 		  ,players.[draft_year]
-		  ,[grade_pro]
+		  ,[grade_college]
+		  ,[grade_pro_yr1]
+		  ,[grade_pro_yr2]
+		  ,[grade_pro_yr3]
+		  ,[grade_pro_yr4]
 		  ,workouts.[id] AS workout_id
 		  ,[priority]
 		  ,COALESCE([combine_or_pro_day],0) AS combine_or_pro_day
@@ -78,12 +84,13 @@ INNER JOIN [bane-development].[dbo].[players] players
         ON players.id=workouts.player_id
  LEFT JOIN ##temp_combine_or_pro_day combpro
 		ON workouts.player_id=combpro.player_id
- LEFT JOIN [AnalyticsWork].[dbo].[corey_grades] grades
-		ON players.nfl_id=grades.player_nfl_id
-LEFT JOIN [AnalyticsWork].[dbo].[corey_positions] corey_pos
-		ON grades.position_id_draft_board=corey_pos.position_id_draft_board
+	   AND workouts.id=combpro.workout_id
+ LEFT JOIN [AnalyticsWork].[dbo].[grades_and_positions_from_sas] grades
+		ON players.nfl_id=grades.player_id_nfl
+ LEFT JOIN [AnalyticsWork].[dbo].[corey_positions] corey_pos
+		ON grades.position_id_sas=corey_pos.position_id_draft_board
      WHERE workout_types.[priority] < 11
-	   AND [draft_year]>=2005
+	   AND [entry_year]=2015
 
 
 /*---------------------------------------------------------------------
@@ -102,7 +109,11 @@ IF OBJECT_ID('tempdb..##temp_workouts_and_measurables_pivot') IS NOT NULL
 		  ,[first_name]
 		  ,[last_name]
 		  ,[draft_year]
-		  ,[grade_pro]
+		  ,[grade_college]
+		  ,[grade_pro_yr1]
+		  ,[grade_pro_yr2]
+		  ,[grade_pro_yr3]
+		  ,[grade_pro_yr4]
 		  ,[workout_id]
 		  ,[priority]
 		  ,[combine_or_pro_day]
@@ -127,7 +138,11 @@ IF OBJECT_ID('tempdb..##temp_workouts_and_measurables_pivot') IS NOT NULL
 		  ,[first_name]
 		  ,[last_name]
 		  ,[draft_year]
-		  ,[grade_pro]
+		  ,[grade_college]
+		  ,[grade_pro_yr1]
+		  ,[grade_pro_yr2]
+		  ,[grade_pro_yr3]
+		  ,[grade_pro_yr4]
 		  ,[workout_id]
 		  ,[priority]
 		  ,[combine_or_pro_day]
@@ -164,6 +179,126 @@ IF OBJECT_ID('tempdb..##temp_forty_analysis_dataset') IS NOT NULL
 		  ,[player_id]
 		  ,[first_name]
 		  ,[last_name]
+		  ,[draft_year]
+		  ,[grade_college]
+		  ,CASE WHEN [grade_pro_yr1] = 8 THEN 50
+		        WHEN [grade_pro_yr1] = 7 THEN 20
+				WHEN [grade_pro_yr1] = 6.9 THEN 10
+				WHEN [grade_pro_yr1] = 6.7 THEN 7.69
+				WHEN [grade_pro_yr1] = 6.5 THEN 6.25
+				WHEN [grade_pro_yr1] = 6.3 THEN 5
+				WHEN [grade_pro_yr1] = 6.1 THEN 2.5
+				WHEN [grade_pro_yr1] = 6.0 THEN 3.33
+				WHEN [grade_pro_yr1] = 5.9 THEN 1.82
+				WHEN [grade_pro_yr1] = 5.8 THEN 1.33
+				WHEN [grade_pro_yr1] = 5.7 THEN 1.11
+				ELSE 0
+			END AS [grade_pro_yr1]
+		  ,CASE WHEN [grade_pro_yr2] = 8 THEN 50
+		        WHEN [grade_pro_yr2] = 7 THEN 20
+				WHEN [grade_pro_yr2] = 6.9 THEN 10
+				WHEN [grade_pro_yr2] = 6.7 THEN 7.69
+				WHEN [grade_pro_yr2] = 6.5 THEN 6.25
+				WHEN [grade_pro_yr2] = 6.3 THEN 5
+				WHEN [grade_pro_yr2] = 6.1 THEN 2.5
+				WHEN [grade_pro_yr2] = 6.0 THEN 3.33
+				WHEN [grade_pro_yr2] = 5.9 THEN 1.82
+				WHEN [grade_pro_yr2] = 5.8 THEN 1.33
+				WHEN [grade_pro_yr2] = 5.7 THEN 1.11
+				ELSE 0
+			END AS [grade_pro_yr2]
+		  ,CASE WHEN [grade_pro_yr3] = 8 THEN 50
+		        WHEN [grade_pro_yr3] = 7 THEN 20
+				WHEN [grade_pro_yr3] = 6.9 THEN 10
+				WHEN [grade_pro_yr3] = 6.7 THEN 7.69
+				WHEN [grade_pro_yr3] = 6.5 THEN 6.25
+				WHEN [grade_pro_yr3] = 6.3 THEN 5
+				WHEN [grade_pro_yr3] = 6.1 THEN 2.5
+				WHEN [grade_pro_yr3] = 6.0 THEN 3.33
+				WHEN [grade_pro_yr3] = 5.9 THEN 1.82
+				WHEN [grade_pro_yr3] = 5.8 THEN 1.33
+				WHEN [grade_pro_yr3] = 5.7 THEN 1.11
+				ELSE 0
+			END AS [grade_pro_yr3]
+		  ,CASE WHEN [grade_pro_yr4] = 8 THEN 50
+		        WHEN [grade_pro_yr4] = 7 THEN 20
+				WHEN [grade_pro_yr4] = 6.9 THEN 10
+				WHEN [grade_pro_yr4] = 6.7 THEN 7.69
+				WHEN [grade_pro_yr4] = 6.5 THEN 6.25
+				WHEN [grade_pro_yr4] = 6.3 THEN 5
+				WHEN [grade_pro_yr4] = 6.1 THEN 2.5
+				WHEN [grade_pro_yr4] = 6.0 THEN 3.33
+				WHEN [grade_pro_yr4] = 5.9 THEN 1.82
+				WHEN [grade_pro_yr4] = 5.8 THEN 1.33
+				WHEN [grade_pro_yr4] = 5.7 THEN 1.11
+				ELSE 0
+			END AS [grade_pro_yr4]
+		  ,[workout_id]
+		  ,[priority]
+		  ,[combine_or_pro_day]
+		  ,[height_converted] AS height
+		  ,POWER([height_converted],2) AS height_squared
+		  ,[weight]
+		  ,POWER([weight],2) AS weight_squared
+		  ,[arm_length_converted] AS arm_length
+		  ,POWER([arm_length_converted],2) AS arm_length_squared
+		  ,[forty_time]
+	  --INTO ##temp_forty_analysis_dataset
+      FROM ##temp_workouts_and_measurables_pivot workout1
+	 WHERE [forty_time] = (SELECT MIN([forty_time])
+							 FROM ##temp_workouts_and_measurables_pivot workout2 
+							WHERE workout1.[player_id]=workout2.[player_id]
+							  AND workout2.combine_or_pro_day=(SELECT MAX([combine_or_pro_day])
+																 FROM ##temp_workouts_and_measurables_pivot workout3
+																WHERE workout2.[player_id]=workout3.[player_id]
+																  AND forty_time IS NOT NULL
+															 GROUP BY workout3.[player_id])
+						 GROUP BY workout2.player_id)
+	  AND [position] NOT IN ('LS','PT','PK')
+  ORDER BY [position]
+
+
+/*---------------------------------------------------------------------
+
+Separate out the full 40 analysis dataset into training, validation, 
+and scoring datasets.
+
+----------------------------------------------------------------------*/
+/*
+	SELECT *
+	  FROM ##temp_forty_analysis_dataset
+	 WHERE random_number <= 6
+
+    SELECT *
+	  FROM ##temp_forty_analysis_dataset
+	 WHERE random_number IN (7,8)
+
+    SELECT *
+	  FROM ##temp_forty_analysis_dataset
+	 WHERE random_number = 9
+*/
+
+/*---------------------------------------------------------------------
+
+Next you create the 20 yard dash analysis dataset.  Add a random number
+so you can create training, validation, and scoring sets from the main 
+dataset.  The nested queries in the where clause make sure you choose
+the workout with the player's LOWEST 20 Time - if he has a time from 
+the combine or a pro day, then take his lowest time of those two,
+otherwise take the lowest time from the other workout types.  You don't
+want to just create a "best of" record, you want to know the size of a 
+player when he ran that specific time.
+
+----------------------------------------------------------------------*/
+
+-- Check if temp_twenty_analysis_dataset exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_twenty_analysis_dataset') IS NOT NULL
+	DROP TABLE ##temp_twenty_analysis_dataset
+
+    SELECT [position]
+		  ,[player_id]
+		  ,[first_name]
+		  ,[last_name]
 	      ,CASE WHEN [draft_year]=2015 THEN 9 ELSE Abs(Checksum(NewId())) % 9 END AS random_number
 		  ,[draft_year]
 		  ,CASE WHEN [grade_pro] = 8 THEN 50
@@ -188,30 +323,10 @@ IF OBJECT_ID('tempdb..##temp_forty_analysis_dataset') IS NOT NULL
 		  ,POWER([weight],2) AS weight_squared
 		  ,[arm_length_converted] AS arm_length
 		  ,POWER([weight],2) AS arm_length_squared
-		  ,[forty_time]
-		  ,CASE 
-			    WHEN [position] = 'DE34' THEN 6.91790807040027+[weight]*0.0037258765035867+[height_converted]*-0.038427131688523
-				WHEN [position] = 'DT34' THEN 3.89995832664482+[weight]*0.00436123060805146
-				WHEN [position] = 'IB' THEN 7.4279665147007+[weight]*0.00488722373056161+[height_converted]*-0.0510263501183082
-				WHEN [position] = 'OB34' THEN 4.52533265504633+[weight]*0.00389865909449176+[height_converted]*-0.00961380589246248
-				WHEN [position] = 'OC' THEN 17.46045704+[weight]*-0.0653398375932231+POWER([weight],2)*0.00012383375583564+[height_converted]*-0.0497850391482204
-				WHEN [position] = 'OH' THEN 8.27691870407392+[weight]*-0.0376408335705+POWER([weight],2)*0.0000962886332424687
-				WHEN [position] = 'OT' THEN 16.3449523873533+[weight]*-0.0608795046261064+POWER([weight],2)*0.000109452826440493+[height_converted]*-0.0346837244622585
-				WHEN [position] = 'TE' THEN 8.76525941597924+[weight]*-0.0376603452727531+POWER([weight],2)*0.0000877036861069619
-			END AS projected_forty_time
-		  ,CASE 
-			    WHEN [position] = 'DE34' THEN [forty_time]-(6.91790807040027+[weight]*0.0037258765035867+[height_converted]*-0.038427131688523)
-				WHEN [position] = 'DT34' THEN [forty_time]-(3.89995832664482+[weight]*0.00436123060805146)
-				WHEN [position] = 'IB' THEN [forty_time]-(7.4279665147007+[weight]*0.00488722373056161+[height_converted]*-0.0510263501183082)
-				WHEN [position] = 'OB34' THEN [forty_time]-(4.52533265504633+[weight]*0.00389865909449176+[height_converted]*-0.00961380589246248)
-				WHEN [position] = 'OC' THEN [forty_time]-(17.46045704+[weight]*-0.0653398375932231+POWER([weight],2)*0.00012383375583564+[height_converted]*-0.0497850391482204)
-				WHEN [position] = 'OH' THEN [forty_time]-(8.27691870407392+[weight]*-0.0376408335705+POWER([weight],2)*0.0000962886332424687)
-				WHEN [position] = 'OT' THEN [forty_time]-(16.3449523873533+[weight]*-0.0608795046261064+POWER([weight],2)*0.000109452826440493+[height_converted]*-0.0346837244622585)
-				WHEN [position] = 'TE' THEN [forty_time]-(8.76525941597924+[weight]*-0.0376603452727531+POWER([weight],2)*0.0000877036861069619)
-			END AS forty_differential
-	  --INTO ##temp_forty_analysis_dataset
+		  ,[twenty_time]
+	  --INTO ##temp_twenty_analysis_dataset
       FROM ##temp_workouts_and_measurables_pivot workout1
-	 WHERE [forty_time] = (SELECT MIN([forty_time])
+	 WHERE [twenty_time] = (SELECT MIN([twenty_time])
 							 FROM ##temp_workouts_and_measurables_pivot workout2 
 							WHERE workout1.[player_id]=workout2.[player_id]
 							  AND workout2.combine_or_pro_day=(SELECT MAX([combine_or_pro_day])
@@ -222,22 +337,21 @@ IF OBJECT_ID('tempdb..##temp_forty_analysis_dataset') IS NOT NULL
 	  AND [position] NOT IN ('LS','PT','PK')
   ORDER BY [position]
 
+  /*---------------------------------------------------------------------
 
-/*---------------------------------------------------------------------
-
-Separate out the full 40 analysis dataset into training, validation, 
+Separate out the full 20 analysis dataset into training, validation, 
 and scoring datasets.
 
 ----------------------------------------------------------------------*/
 
 	SELECT *
-	  FROM ##temp_forty_analysis_dataset
+	  FROM ##temp_twenty_analysis_dataset
 	 WHERE random_number <= 6
 
     SELECT *
-	  FROM ##temp_forty_analysis_dataset
+	  FROM ##temp_twenty_analysis_dataset
 	 WHERE random_number IN (7,8)
 
     SELECT *
-	  FROM ##temp_forty_analysis_dataset
+	  FROM ##temp_twenty_analysis_dataset
 	 WHERE random_number = 9
