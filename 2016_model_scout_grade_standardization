@@ -14,6 +14,8 @@ So this could potentially lead to some scouts (Eric, Chad, Vince) who tend to vi
 
 And other scouts (Andrew) who tend to view the lower players to have lower average grades
 
+v6 coalesces a few position specific and critical factors into one column when they are really similar
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 
@@ -243,7 +245,7 @@ IF OBJECT_ID('tempdb..##temp_evaluations_player_pivot') IS NOT NULL
 		  ,[CF-ARM/S] AS cf_arm_strength
 		  ,[CF-AWA] AS cf_mental_awareness
 		  ,[CF-CMP] AS cf_competitiveness
-		  ,[CF-CMP/LD] AS cf_competitiveness_leadership
+
 		  ,[CF-FLI/BALL] AS cf_flight_of_ball
 		  ,[CF-MOB] AS cf_mobility
 		  ,[CF-MTL/GAM] AS cf_mental_game_management
@@ -254,9 +256,9 @@ IF OBJECT_ID('tempdb..##temp_evaluations_player_pivot') IS NOT NULL
 		  ,[PS-ACC] AS ps_accurracy
 		  ,[PS-APPR/LN] AS ps_approach_line
 		  ,[PS-BALLPROT] AS ps_ball_protection
-		  ,[PS-BLK/BLTZ] AS ps_blocking_blitz_pro
+
 		  ,[PS-BLOCK] AS ps_blocking
-		  ,[PS-BLTZ/PASS/RUSH] AS ps_blitz_pass_rush_ability
+
 		  ,[PS-BLTZ/PICK] AS ps_blitz_pickup_fbi
 		  ,[PS-BODY/A] AS ps_body_adjustment
 		  ,[PS-CLS/B] AS ps_close_on_the_ball
@@ -269,7 +271,7 @@ IF OBJECT_ID('tempdb..##temp_evaluations_player_pivot') IS NOT NULL
 		  ,[PS-HANDL/T] AS ps_handling_time
 		  ,[PS-HND/QK] AS ps_hand_quickness
 		  ,[PS-HNDS] AS ps_hands
-		  ,[PS-HNDS/BDYA] AS ps_hands_body_adjustment
+
 		  ,[PS-INSRUN] AS ps_inside_run
 		  ,[PS-KEY/D] AS ps_key_and_diagnose
 		  ,[PS-LAT/M] AS ps_lateral_movement
@@ -282,22 +284,22 @@ IF OBJECT_ID('tempdb..##temp_evaluations_player_pivot') IS NOT NULL
 		  ,[PS-PLANT/R] AS ps_plant_relationship
 		  ,[PS-PLY/M] AS ps_play_making
 		  ,[PS-POA/R] AS ps_poa_run
-		  ,[PS-PRES/MS] AS ps_pressure_kicks_mental_stability_no_k
-		  ,[PS-PRESS/K/MENT] AS ps_pressure_kicks_mental_stability_k
+
+		  ,[PS-PRESS/K/MENT] AS ps_pressure_kicks_mental_stability
 		  ,[PS-PROD] AS ps_production
 		  ,[PS-PROD/A] AS ps_production_accuracy
 		  ,[PS-PULL] AS ps_pulling
 		  ,[PS-PUR] AS ps_pursuit
 		  ,[PS-RAC] AS ps_run_after_catch
-		  ,[PS-RB/S/FB] AS ps_run_blocking_sustain_fb_skills
-		  ,[PS-REL] AS ps_release_rel
+
+		  ,[PS-REL] AS ps_release
 		  ,[PS-RISE] AS ps_rise
-		  ,[PS-RLS] AS ps_release_rls
+
 		  ,[PS-RNG/B] AS ps_range_ball_awareness
 		  ,[PS-ROU] AS ps_routes
 		  ,[PS-RUNS/T] AS ps_run_support_tackling
 		  ,[PS-SHD/B/HNDS] AS ps_shed_blockers_use_of_hands
-		  ,[PS-SHED/P/HND] AS ps_shed_poa_hand_quickness
+
 		  ,[PS-SIZ] AS ps_size
 		  ,[PS-SIZ/S] AS ps_size_strength
 		  ,[PS-SPD/HWS] AS ps_speed_hws_chart
@@ -322,8 +324,8 @@ IF OBJECT_ID('tempdb..##temp_evaluations_player_pivot') IS NOT NULL
     SELECT player_id
 		  ,skill_code
 		  ,value_adjusted_mean
-      FROM ##temp_evaluations_player_means WHERE skill_code IN ('CF-AA', 'CF-ACC', 'CF-ANG/APP', 'CF-ARM/S', 'CF-AWA', 'CF-CMP', 'CF-CMP/LD', 'CF-FLI/BALL', 'CF-MOB', 'CF-MTL/GAM', 'CF-PLYSPD', 'CF-PRO', 'CF-SIZ', 'CF-STR/EXPL', 'PS-ACC', 'PS-APPR/LN', 'PS-BALLPROT', 'PS-BLK/BLTZ', 'PS-BLOCK', 'PS-BLTZ/PASS/RUSH', 'PS-BLTZ/PICK', 'PS-BODY/A', 'PS-CLS/B', 'PS-COV', 'PS-DEC/M', 'PS-DIR/K', 'PS-DRP/S', 'PS-ELU', 'PS-FOOT/S', 'PS-HANDL/T', 'PS-HND/QK', 'PS-HNDS', 'PS-HNDS/BDYA', 'PS-INSRUN', 'PS-KEY/D', 'PS-LAT/M', 'PS-MM/C', 'PS-OUTRUN', 'PS-PASS/BLK', 'PS-PASS/R', 'PS-PASS/RNG', 'PS-PKT/A', 'PS-PLANT/R', 'PS-PLY/M', 'PS-POA/R', 'PS-PRES/MS', 'PS-PRESS/K/MENT', 'PS-PROD', 'PS-PROD/A', 'PS-PULL', 'PS-PUR', 'PS-RAC', 'PS-RB/S/FB', 'PS-REL', 'PS-RISE', 'PS-RLS', 'PS-RNG/B', 'PS-ROU', 'PS-RUNS/T', 'PS-SHD/B/HNDS', 'PS-SHED/P/HND', 'PS-SIZ', 'PS-SIZ/S', 'PS-SPD/HWS', 'PS-ST', 'PS-STAWY/KICKER', 'PS-STEP/P', 'PS-STYLE', 'PS-SUS/RUNB', 'PS-TKL', 'PS-TUFF/TKL', 'PS-VEL', 'PS-VIS', 'PS-ZNE/C', 'C', 'D', 'I', 'S', 'T', 'GRADE')) up
-     PIVOT (MAX(value_adjusted_mean) FOR skill_code IN ([CF-AA], [CF-ACC], [CF-ANG/APP], [CF-ARM/S], [CF-AWA], [CF-CMP], [CF-CMP/LD], [CF-FLI/BALL], [CF-MOB], [CF-MTL/GAM], [CF-PLYSPD], [CF-PRO], [CF-SIZ], [CF-STR/EXPL], [PS-ACC], [PS-APPR/LN], [PS-BALLPROT], [PS-BLK/BLTZ], [PS-BLOCK], [PS-BLTZ/PASS/RUSH], [PS-BLTZ/PICK], [PS-BODY/A], [PS-CLS/B], [PS-COV], [PS-DEC/M], [PS-DIR/K], [PS-DRP/S], [PS-ELU], [PS-FOOT/S], [PS-HANDL/T], [PS-HND/QK], [PS-HNDS], [PS-HNDS/BDYA], [PS-INSRUN], [PS-KEY/D], [PS-LAT/M], [PS-MM/C], [PS-OUTRUN], [PS-PASS/BLK], [PS-PASS/R], [PS-PASS/RNG], [PS-PKT/A], [PS-PLANT/R], [PS-PLY/M], [PS-POA/R], [PS-PRES/MS], [PS-PRESS/K/MENT], [PS-PROD], [PS-PROD/A], [PS-PULL], [PS-PUR], [PS-RAC], [PS-RB/S/FB], [PS-REL], [PS-RISE], [PS-RLS], [PS-RNG/B], [PS-ROU], [PS-RUNS/T], [PS-SHD/B/HNDS], [PS-SHED/P/HND], [PS-SIZ], [PS-SIZ/S], [PS-SPD/HWS], [PS-ST], [PS-STAWY/KICKER], [PS-STEP/P], [PS-STYLE], [PS-SUS/RUNB], [PS-TKL], [PS-TUFF/TKL], [PS-VEL], [PS-VIS], [PS-ZNE/C], [C], [D], [I], [S], [T], [GRADE])) AS pvt
+      FROM ##temp_evaluations_player_means WHERE skill_code IN ('CF-AA', 'CF-ACC', 'CF-ANG/APP', 'CF-ARM/S', 'CF-AWA', 'CF-CMP', 'CF-FLI/BALL', 'CF-MOB', 'CF-MTL/GAM', 'CF-PLYSPD', 'CF-PRO', 'CF-SIZ', 'CF-STR/EXPL', 'PS-ACC', 'PS-APPR/LN', 'PS-BALLPROT', 'PS-BLOCK', 'PS-BLTZ/PICK', 'PS-BODY/A', 'PS-CLS/B', 'PS-COV', 'PS-DEC/M', 'PS-DIR/K', 'PS-DRP/S', 'PS-ELU', 'PS-FOOT/S', 'PS-HANDL/T', 'PS-HND/QK', 'PS-HNDS', 'PS-INSRUN', 'PS-KEY/D', 'PS-LAT/M', 'PS-MM/C', 'PS-OUTRUN', 'PS-PASS/BLK', 'PS-PASS/R', 'PS-PASS/RNG', 'PS-PKT/A', 'PS-PLANT/R', 'PS-PLY/M', 'PS-POA/R', 'PS-PRESS/K/MENT', 'PS-PROD', 'PS-PROD/A', 'PS-PULL', 'PS-PUR', 'PS-RAC', 'PS-REL', 'PS-RISE', 'PS-RNG/B', 'PS-ROU', 'PS-RUNS/T', 'PS-SHD/B/HNDS', 'PS-SIZ', 'PS-SIZ/S', 'PS-SPD/HWS', 'PS-ST', 'PS-STAWY/KICKER', 'PS-STEP/P', 'PS-STYLE', 'PS-SUS/RUNB', 'PS-TKL', 'PS-TUFF/TKL', 'PS-VEL', 'PS-VIS', 'PS-ZNE/C', 'C', 'D', 'I', 'S', 'T', 'GRADE')) up
+     PIVOT (MAX(value_adjusted_mean) FOR skill_code IN ([CF-AA], [CF-ACC], [CF-ANG/APP], [CF-ARM/S], [CF-AWA], [CF-CMP], [CF-FLI/BALL], [CF-MOB], [CF-MTL/GAM], [CF-PLYSPD], [CF-PRO], [CF-SIZ], [CF-STR/EXPL], [PS-ACC], [PS-APPR/LN], [PS-BALLPROT], [PS-BLOCK], [PS-BLTZ/PICK], [PS-BODY/A], [PS-CLS/B], [PS-COV], [PS-DEC/M], [PS-DIR/K], [PS-DRP/S], [PS-ELU], [PS-FOOT/S], [PS-HANDL/T], [PS-HND/QK], [PS-HNDS], [PS-INSRUN], [PS-KEY/D], [PS-LAT/M], [PS-MM/C], [PS-OUTRUN], [PS-PASS/BLK], [PS-PASS/R], [PS-PASS/RNG], [PS-PKT/A], [PS-PLANT/R], [PS-PLY/M], [PS-POA/R], [PS-PRESS/K/MENT], [PS-PROD], [PS-PROD/A], [PS-PULL], [PS-PUR], [PS-RAC], [PS-REL], [PS-RISE], [PS-RNG/B], [PS-ROU], [PS-RUNS/T], [PS-SHD/B/HNDS], [PS-SIZ], [PS-SIZ/S], [PS-SPD/HWS], [PS-ST], [PS-STAWY/KICKER], [PS-STEP/P], [PS-STYLE], [PS-SUS/RUNB], [PS-TKL], [PS-TUFF/TKL], [PS-VEL], [PS-VIS], [PS-ZNE/C], [C], [D], [I], [S], [T], [GRADE])) AS pvt
   ORDER BY player_id
 
 --SELECT * FROM ##temp_evaluations_player_pivot 
@@ -690,7 +692,6 @@ select distinct u.player_id
 ,cf_arm_strength
 ,cf_mental_awareness
 ,cf_competitiveness
-,cf_competitiveness_leadership
 ,cf_flight_of_ball
 ,cf_mobility
 ,cf_mental_game_management
@@ -701,9 +702,7 @@ select distinct u.player_id
 ,ps_accurracy
 ,ps_approach_line
 ,ps_ball_protection
-,ps_blocking_blitz_pro
 ,ps_blocking
-,ps_blitz_pass_rush_ability
 ,ps_blitz_pickup_fbi
 ,ps_body_adjustment
 ,ps_close_on_the_ball
@@ -716,7 +715,6 @@ select distinct u.player_id
 ,ps_handling_time
 ,ps_hand_quickness
 ,ps_hands
-,ps_hands_body_adjustment
 ,ps_inside_run
 ,ps_key_and_diagnose
 ,ps_lateral_movement
@@ -729,22 +727,18 @@ select distinct u.player_id
 ,ps_plant_relationship
 ,ps_play_making
 ,ps_poa_run
-,ps_pressure_kicks_mental_stability_no_k
-,ps_pressure_kicks_mental_stability_k
+,ps_pressure_kicks_mental_stability
 ,ps_production
 ,ps_production_accuracy
 ,ps_pulling
 ,ps_pursuit
 ,ps_run_after_catch
-,ps_run_blocking_sustain_fb_skills
-,ps_release_rel
+,ps_release
 ,ps_rise
-,ps_release_rls
 ,ps_range_ball_awareness
 ,ps_routes
 ,ps_run_support_tackling
 ,ps_shed_blockers_use_of_hands
-,ps_shed_poa_hand_quickness
 ,ps_size
 ,ps_size_strength
 ,ps_speed_hws_chart
