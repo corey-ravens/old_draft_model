@@ -49,141 +49,39 @@ IF OBJECT_ID('tempdb..#temp_outlier_dash_master') IS NOT NULL
 		AND value BETWEEN 4.00 AND 7.00
 
 
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Check if #temp_forty_order exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_forty_order') IS NOT NULL
+	DROP TABLE #temp_forty_order
 
-Self join the master table so you can put the electronic time alongside the two hand times.
-
-OUTPUT TABLES:
-#temp_timing_differences
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_timing_differences exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_timing_differences') IS NOT NULL
-	DROP TABLE #temp_timing_differences
-
-	SELECT m1.workout_id
-		,m1.workout_description
-		,m1.bane_player_id
-		,m1.draft_year
-		,m1.workout_code
-		,m1.[type]
-		,m1.workout_date
-		,m1.measurable_type_id
-		,m1.code
-		,m1.attempt
-		,m1.value AS hand_time
-		,m2.value AS electronic_time
-		,m1.value - m2.value AS time_difference
-	INTO #temp_timing_differences
-	FROM #temp_outlier_dash_master m1
-	INNER JOIN #temp_outlier_dash_master m2
-		ON m1.workout_id = m2.workout_id
-		AND m2.attempt = 3
-	WHERE m1.attempt IN (1,2)
-
-	INSERT INTO #temp_timing_differences
-	SELECT m1.workout_id
-		,m1.workout_description
-		,m1.bane_player_id
-		,m1.draft_year
-		,m1.workout_code
-		,m1.[type]
-		,m1.workout_date
-		,m1.measurable_type_id
-		,m1.code
-		,m1.attempt
-		,m1.value AS hand_time
-		,m2.value AS electronic_time
-		,m1.value - m2.value AS time_difference
-	FROM #temp_outlier_dash_master m1
-	INNER JOIN #temp_outlier_dash_master m2
-		ON m1.workout_id = m2.workout_id
-		AND m2.attempt = 6
-	WHERE m1.attempt IN (4,5)
+	SELECT *
+		,RANK() OVER (PARTITION BY bane_player_id ORDER BY value, attempt) AS forty_order
+	INTO #temp_forty_order
+	FROM #temp_outlier_dash_master
+	WHERE draft_year = 2018
 
 
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Find the average differences
-
-OUTPUT TABLES:
-#temp_difference_avg
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_difference_avg exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_difference_avg') IS NOT NULL
-	DROP TABLE #temp_difference_avg
-
-	SELECT workout_description 
-		,AVG(time_difference) AS time_difference_avg
-		,STDEV(time_difference) AS time_difference_std
-	INTO #temp_difference_avg
-	FROM #temp_timing_differences td
-	GROUP BY workout_description 
 
 
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Join the avg and stdev to the difference table so you can find the z scores.
-
-OUTPUT TABLES:
-#temp_difference_z_scores
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_difference_z_scores exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_difference_z_scores') IS NOT NULL
-	DROP TABLE #temp_difference_z_scores
-
-	SELECT td.*
-		,time_difference_avg
-		,time_difference_std
-		,(time_difference - time_difference_avg) / time_difference_std AS time_difference_z
-		,CASE WHEN (time_difference - time_difference_avg) / time_difference_std >= 2 OR (time_difference - time_difference_avg) / time_difference_std  <= -2 THEN 1 ELSE 0 END AS outlier_time
+	SELECT f1.bane_player_id
 		,CONCAT(last_name,', ',goes_by) AS player
-		,combine_jersey
+		,translation AS position
 		,sc.code AS school
-	INTO #temp_difference_z_scores
-	FROM #temp_timing_differences td
-	INNER JOIN #temp_difference_avg av
-		ON td.workout_description = av.workout_description
+		,combine_jersey
+		,f1.attempt
+		,f1.value
+		,f2.value
+		,CASE WHEN ABS(f1.value - f2.value) >=  0.07 THEN 1 ELSE 0 END AS outlier_time
+	FROM #temp_forty_order f1
+	INNER JOIN #temp_forty_order f2
+		ON f1.bane_player_id = f2.bane_player_id
+		AND f1.forty_order = 1
+		AND f2.forty_order = 2
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
-		ON td.bane_player_id = pl.id
+		ON f1.bane_player_id = pl.id
 		AND pl.is_deleted = 0
-	INNER JOIN BaneProductionAnalytics.dbo.schools sc
+	LEFT JOIN BaneProductionAnalytics.dbo.schools sc
 		ON pl.ncaa_club_id = sc.id
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Note which players have a double outlier (both hand times in the same run off by more than 2 std devs).
-
-OUTPUT TABLES:
-#temp_outlier_list
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_outlier_list exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_outlier_list') IS NOT NULL
-	DROP TABLE #temp_outlier_list
-
-	SELECT workout_id
-		,workout_description
-		,bane_player_id
-		,player
-		,combine_jersey
-		,school
-		,SUM(CASE WHEN attempt IN (1,2) THEN outlier_time ELSE 0 END) AS outlier_first_run
-		,SUM(CASE WHEN attempt IN (4,5) THEN outlier_time ELSE 0 END) AS outlier_second_run
-	INTO #temp_outlier_list
-	FROM #temp_difference_z_scores
-	GROUP BY workout_id
-		,workout_description
-		,bane_player_id
-		,player
-		,combine_jersey
-		,school
-
+	LEFT JOIN BaneProductionAnalytics.dbo.positions po
+		ON pl.position_id = po.id
+	where ABS(f1.value - f2.value) >=  0.07
 
