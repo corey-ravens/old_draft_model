@@ -1,0 +1,748 @@
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for creating the post combine measurables data tables.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Get down to one row of draft board position. Take a players draft
+board position from as late in the process as available. 
+
+OUTPUT TABLES:
+#temp_draft_board_positions_with_order
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_draft_board_positions exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_positions') IS NOT NULL
+	DROP TABLE #temp_draft_board_positions
+
+    SELECT player_id
+	      ,position
+		  ,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
+		        WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
+				WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
+				ELSE NULL
+		   END AS order_by
+	 INTO #temp_draft_board_positions
+	 FROM [BaneProductionAnalytics].[dbo].[draft_board_grades]
+	WHERE position != '' AND position IS NOT NULL
+
+
+-- Check if #temp_draft_board_positions_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_positions_with_order') IS NOT NULL
+	DROP TABLE #temp_draft_board_positions_with_order
+
+    SELECT player_id
+	      ,position
+	      ,RANK() OVER (PARTITION BY player_id ORDER BY order_by) AS draft_board_position_order
+	  INTO #temp_draft_board_positions_with_order
+	  FROM #temp_draft_board_positions
+
+--SELECT * FROM #temp_draft_board_positions_with_order
+
+-- Check if #temp_draft_board_positions_latest exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_positions_latest') IS NOT NULL
+	DROP TABLE #temp_draft_board_positions_latest
+
+    SELECT *
+	  INTO #temp_draft_board_positions_latest
+	  FROM #temp_draft_board_positions_with_order
+	 WHERE draft_board_position_order = 1
+
+--SELECT DISTINCT POSITION FROM #temp_draft_board_positions_latest
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the master measurables table.
+
+**Keep an eye on workouts where some times are 4 priority, some are 5. Example workout ids: 638693,638694,638696,638697,638698,638699,638700,638806,638808,638809,638810,638811
+
+OUTPUT TABLES:
+#temp_measurables_master
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+DECLARE @current_season INT
+SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+
+-- Check if #temp_measurables_master exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_measurables_master') IS NOT NULL
+	DROP TABLE #temp_measurables_master
+
+    SELECT wo.id AS workout_id
+		  ,wo.[description] AS workout_description
+	      ,wo.player_id AS bane_player_id
+		  ,pl.draft_year
+		  ,CASE WHEN pl.draft_year <= @current_season THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',pl.draft_year)) / 365.2425 
+				WHEN pl.draft_year IN (@current_season + 1) THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',@current_season + 1)) / 365.2425 
+				ELSE NULL
+		   END AS age_at_draft
+		  ,CASE WHEN dbp.position IN ('RUSH','SAM','DP') THEN 'OB'
+				WHEN dbp.position IN ('FS','SS') THEN 'DS'
+				WHEN dbp.position IN ('OH') THEN 'RB'
+				WHEN dbp.position IN ('P') THEN 'PT'
+				WHEN dbp.position IN ('WO') THEN 'WR'
+				WHEN dbp.position IN ('WO') THEN 'WR'
+				WHEN COALESCE(dbp.position,po.abbreviation) = 'DE43' THEN 'OB'
+				ELSE COALESCE(dbp.position,po.translation)
+		   END AS position
+		  ,eligibility
+		  ,re.code AS workout_code
+		  ,CASE WHEN re.[priority] != 1 AND UPPER(re.[description]) LIKE '%ELECTRONIC%' THEN 1.5
+		        ELSE re.[priority]
+		   END AS adjusted_priority
+		  ,wt.[type]
+		  ,wo.[date] AS workout_date
+		  ,me.measurable_type_id
+		  ,mt.code
+		  ,me.order_by AS attempt
+		  ,me.value AS value
+	  INTO #temp_measurables_master
+      FROM [BaneProductionAnalytics].[dbo].[workouts] wo
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[measurables] me
+        ON wo.id = me.workout_id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[measurable_types] mt
+		ON me.measurable_type_id = mt.id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[player_workout_types] wt
+		ON wo.player_workout_type_id = wt.id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[reliabilities] re
+		ON me.reliability_id = re.id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[players] pl
+		ON wo.player_id = pl.id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[positions] po
+		ON pl.position_id = po.id
+ LEFT JOIN #temp_draft_board_positions_latest dbp
+		ON wo.player_id = dbp.player_id
+	 WHERE re.translation IN ('I','V','W','R') --Only Indy, Pro Day, Combine, or Workout numbers
+	   AND wo.[description] NOT LIKE '%(VET)%' --Not from the Veteran Combine
+	   AND NOT (wt.[type] = 'RPT' AND re.translation = 'I')  --Not from a scout entering the Combine numbers
+	   AND (wo.is_deleted = 0 OR (wo.is_deleted = 1 AND wo.[description] LIKE 'NCAA Scouting%')) --Not a deleted record
+	   AND NOT YEAR(wo.[date]) > pl.draft_year --Not from a workout that occured after his draft
+	   AND (pl.nfl_id IS NOT NULL OR pl.draft_year = @current_season + 1) --Only players who at least had one NFL transaction
+	   AND pl.draft_year >= 2005
+	   AND pl.draft_year <=  @current_season + 1
+	   AND value IS NOT NULL
+	   AND ((mt.code = 'HgtCnv' AND value BETWEEN 40 AND 90)
+			OR (mt.code = 'Wgt' AND value BETWEEN 100 AND 450)
+			OR (mt.code = '40YTime' AND value BETWEEN 4.00 AND 7.00)
+			OR (mt.code = 'WSpanCnv' AND value BETWEEN 40 AND 120)
+			OR (mt.code = 'ArmLngCnv' AND value BETWEEN 20 AND 48)
+			OR (mt.code = 'HSpanCnv' AND value BETWEEN 6 AND 15)
+			OR (mt.code = '20YShuttle' AND value BETWEEN 3 AND 30)
+			OR (mt.code = 'VertJumpCnv' AND value BETWEEN 10 AND 60)
+			OR (mt.code IN ('BroadJumpCnv','StrengthReps225','TestScore','20YTime','10YTime','3Cone','60YShuttle','LTurn','RTurn','RipRushL','SwimRushR','OutRouteL','OutRouteR'
+			,'FPCT','FMass','FFMass','RMR','FlexFrontShoulderCnv','FlexBackShoulderCnv','FlexHamstringCnv','FlexGroinCnv'))
+			)
+
+/*
+SELECT *
+FROM #temp_measurables_master
+WHERE bane_player_id = 34960
+ORDER BY workout_code desc, attempt, code
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Find the average age by eligibility to fill in missing ages for the current draft year.
+
+OUTPUT TABLES:
+#temp_average_ages
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_average_ages exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_average_ages') IS NOT NULL
+	DROP TABLE #temp_average_ages
+
+    SELECT draft_year
+		  ,eligibility
+		  ,AVG(age_at_draft) AS average_age
+	  INTO #temp_average_ages
+      FROM #temp_measurables_master
+	 WHERE draft_year = @current_season + 1
+  GROUP BY draft_year
+		  ,eligibility
+
+/*
+SELECT *
+FROM #temp_average_ages
+ORDER BY draft_year, eligibility
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Pivot the non-run measures (height, weight, jump, bench, etc.)
+
+OUTPUT TABLES:
+#temp_measures_pivot
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_measures_pivot exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_measures_pivot') IS NOT NULL
+	DROP TABLE #temp_measures_pivot
+
+    SELECT workout_id
+		  ,workout_description
+	      ,bane_player_id
+		  ,draft_year
+		  ,age_at_draft
+		  ,eligibility
+		  ,position
+	      ,[HgtCnv] AS height
+	      ,[Wgt] AS [weight]
+		  ,[HSpanCnv] AS hand_size
+	      ,[ArmLngCnv] AS arm_length
+		  ,[WSpanCnv] AS wingspan
+		  ,[BroadJumpCnv] AS broad_jump
+		  ,[VertJumpCnv] AS vertical_jump
+		  ,[StrengthReps225] AS bench_reps
+		  ,[TestScore] AS wonderlic
+		  ,[OutRouteL] AS throw_speed_left
+		  ,[OutRouteR] AS throw_speed_right
+	  INTO #temp_measures_pivot
+      FROM (
+    SELECT workout_id
+		  ,workout_description
+	      ,bane_player_id
+		  ,draft_year
+		  ,age_at_draft
+		  ,eligibility
+		  ,position
+		  ,code
+		  ,value
+      FROM #temp_measurables_master WHERE code IN ('HgtCnv','Wgt','HSpanCnv','ArmLngCnv','WSpanCnv','BroadJumpCnv','VertJumpCnv','StrengthReps225','TestScore','OutRouteL','OutRouteR')) up
+     PIVOT (MAX(value) FOR code IN ([HgtCnv],[Wgt],[HSpanCnv],[ArmLngCnv],[WSpanCnv],[BroadJumpCnv],[VertJumpCnv],[StrengthReps225],[TestScore],[OutRouteL],[OutRouteR])) AS pvt
+	 WHERE 1 = 1
+  ORDER BY bane_player_id, workout_id
+
+/*
+SELECT *
+FROM #temp_measures_pivot
+WHERE bane_player_id = 	10241
+ORDER BY adjusted_priority, attempt
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Pivot the 40, 20, and 10 Times so you can get Flying 10 and 20 from the same run.
+You want to avoid taking his best 40, and his best 20 from different runs to calculate
+his best flying 20.  Also pivot his other runs (Shuttles, etc.) so you can calculate
+the advanced measurables.
+
+OUTPUT TABLES:
+#temp_runs_pivot
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_runs_pivot exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_runs_pivot') IS NOT NULL
+	DROP TABLE #temp_runs_pivot
+
+    SELECT workout_id
+		  ,workout_description
+		  ,adjusted_priority
+	      ,bane_player_id
+		  ,attempt
+	      ,[40YTime] AS forty_dash
+	      ,[20YTime] AS twenty_split
+	      ,[10YTime] AS ten_split
+		  ,[20YShuttle] AS short_shuttle
+		  ,[60YShuttle] AS long_shuttle
+		  ,[3Cone] AS three_cone
+		  ,[LTurn] AS left_turn
+		  ,[RTurn] AS right_turn
+		  ,[RipRushL] AS rip_left
+		  ,[SwimRushR] AS swim_right
+	  INTO #temp_runs_pivot
+      FROM (
+    SELECT workout_id
+		  ,workout_description
+		  ,adjusted_priority
+	      ,bane_player_id
+		  ,attempt
+		  ,code
+		  ,value
+      FROM #temp_measurables_master WHERE code IN ('40YTime', '20YTime', '10YTime', '20YShuttle', '3Cone', '60YShuttle','LTurn','RTurn','RipRushL','SwimRushR')) up
+     PIVOT (MIN(value) FOR code IN ([40YTime], [20YTime], [10YTime], [20YShuttle], [3Cone], [60YShuttle],[LTurn],[RTurn],[RipRushL],[SwimRushR])) AS pvt
+	 WHERE 1 = 1
+  ORDER BY bane_player_id, workout_id
+
+/*
+SELECT *
+FROM #temp_runs_pivot
+WHERE bane_player_id = 	10241
+ORDER BY adjusted_priority, attempt
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create a table with adjusted workout priority for workouts where a player
+doesn't run.
+
+OUTPUT TABLES:
+#temp_adjusted_workout_priority
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_adjusted_workout_priority exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_adjusted_workout_priority') IS NOT NULL
+	DROP TABLE #temp_adjusted_workout_priority
+
+    SELECT workout_id
+		  ,MAX(adjusted_priority) AS adjusted_priority
+		  ,MIN(attempt) AS attempt
+	  INTO #temp_adjusted_workout_priority
+	  FROM #temp_measurables_master
+  GROUP BY workout_id
+
+/*
+SELECT *
+FROM #temp_adjusted_workout_priority
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Join the runs to the measures. Also add in the "Flying" times.
+
+OUTPUT TABLES:
+#temp_measurables
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_measurables exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_measurables') IS NOT NULL
+	DROP TABLE #temp_measurables
+
+    SELECT me.workout_id
+		  ,me.workout_description
+		  ,COALESCE(ru.adjusted_priority,aw.adjusted_priority) AS adjusted_priority
+	      ,me.bane_player_id
+		  ,me.draft_year
+		  ,COALESCE(age_at_draft,average_age) AS age_at_draft
+		  ,position
+		  ,CASE WHEN position IN ('OT','OG','OC') THEN 'OL'
+				WHEN position IN ('WR','TE','RB','FB') THEN 'OSKILL'
+				WHEN position IN ('DT','DE') THEN 'DL'
+				WHEN position IN ('OB','IB') THEN 'LB'
+				WHEN position IN ('DC','DS') THEN 'DB'
+				ELSE position
+		   END AS position_group
+		  ,COALESCE(ru.attempt,aw.attempt) AS attempt
+	      ,height
+	      ,[weight]
+		  ,hand_size
+	      ,arm_length
+		  ,wingspan
+		  ,broad_jump
+		  ,vertical_jump
+		  ,bench_reps
+		  ,bench_reps * arm_length AS bench_work
+		  ,wonderlic
+		  ,ten_split
+		  ,twenty_split
+		  ,forty_dash
+		  ,twenty_split - ten_split AS flying_ten
+		  ,forty_dash - twenty_split AS flying_twenty
+		  ,short_shuttle
+		  ,long_shuttle
+		  ,three_cone
+		  ,throw_speed_left
+		  ,throw_speed_right
+		  ,CASE WHEN throw_speed_left > throw_speed_right THEN throw_speed_left
+				WHEN throw_speed_left <= throw_speed_right THEN throw_speed_right
+		   END AS throw_speed
+		  ,left_turn
+		  ,right_turn
+		  ,rip_left
+		  ,swim_right
+	  INTO #temp_measurables
+	  FROM #temp_measures_pivot me
+ LEFT JOIN #temp_runs_pivot ru
+		ON me.workout_id = ru.workout_id
+ LEFT JOIN #temp_adjusted_workout_priority aw--Join this in so you can get priority when a player didn't run at that workout
+		ON me.workout_id = aw.workout_id
+ LEFT JOIN #temp_average_ages age
+		ON me.draft_year = age.draft_year
+	   AND me.eligibility = age.eligibility
+
+/*
+SELECT *
+FROM #temp_measurables
+WHERE adjusted_priority=0 workout_id = 396213
+ORDER BY adjusted_priority, attempt
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create an r input table that you can feed in to generate expected measurables.
+
+LONG SHUTTLE: NO QB, OL, DL
+
+OUTPUT TABLES:
+Analytics.dbo.r_input_draft_model_expected_measurables
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+TRUNCATE TABLE Analytics.dbo.r_input_draft_model_expected_measurables
+
+INSERT INTO Analytics.dbo.r_input_draft_model_expected_measurables
+    SELECT *
+	  FROM #temp_measurables
+  ORDER BY position, adjusted_priority, bane_player_id
+
+/*
+SELECT *
+FROM Analytics.dbo.r_input_draft_model_expected_measurables
+WHERE bane_player_id = 	73957
+ORDER BY adjusted_priority, attempt
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+RUN R PROGRAM
+X:\R\college_scouting\draft_modeling\post_combine\expected_measurables\expected_measurables_score_data_v4
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Join the r input and output tables so you can compare actual to expected values.
+
+(Inner join to r_output removes LS, PT, PK, and NULL positions)
+
+OUTPUT TABLES:
+#temp_advanced_measurables
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_advanced_measurables exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_advanced_measurables') IS NOT NULL
+	DROP TABLE #temp_advanced_measurables
+
+    SELECT inp.*
+		  ,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN forty_dash ELSE forty_dash_adjusted END) - expected_forty_dash) AS forty_dash_vs_expected
+		  ,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN twenty_split ELSE twenty_split_adjusted END) - expected_twenty_split) AS twenty_split_vs_expected
+		  ,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN ten_split ELSE ten_split_adjusted END) - expected_ten_split) AS ten_split_vs_expected
+		  ,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN flying_twenty ELSE flying_twenty_adjusted END) - expected_flying_twenty) AS flying_twenty_vs_expected
+		  ,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN flying_ten ELSE flying_ten_adjusted END) - expected_flying_ten) AS flying_ten_vs_expected
+		  ,CONVERT(DECIMAL(20,6),long_shuttle - expected_long_shuttle) AS long_shuttle_vs_expected
+		  ,CONVERT(DECIMAL(20,6),short_shuttle - expected_short_shuttle) AS short_shuttle_vs_expected
+		  ,CONVERT(DECIMAL(20,6),three_cone - expected_three_cone) AS three_cone_vs_expected
+		  ,CONVERT(DECIMAL(20,6),broad_jump - expected_broad_jump) AS broad_jump_vs_expected
+		  ,CONVERT(DECIMAL(20,6),vertical_jump - expected_vertical_jump) AS vertical_jump_vs_expected
+		  ,CONVERT(DECIMAL(20,6),bench_reps - expected_bench_reps) AS bench_reps_vs_expected
+		  ,CONVERT(DECIMAL(20,6),bench_work - expected_bench_work) AS bench_work_vs_expected
+		  ,CONVERT(DECIMAL(20,6),swim_right - expected_swim_right) AS swim_right_vs_expected
+		  ,CONVERT(DECIMAL(20,6),rip_left - expected_rip_left) AS rip_left_vs_expected
+		  ,CONVERT(DECIMAL(20,6),left_turn - expected_left_turn) AS left_turn_vs_expected
+		  ,CONVERT(DECIMAL(20,6),right_turn - expected_right_turn) AS right_turn_vs_expected
+		  ,CONVERT(DECIMAL(20,6),throw_speed - expected_throw_speed) AS throw_speed_vs_expected
+		  ,forty_dash_adjusted
+		  ,twenty_split_adjusted
+		  ,ten_split_adjusted
+		  ,flying_twenty_adjusted
+		  ,flying_ten_adjusted
+	  INTO #temp_advanced_measurables
+	  FROM Analytics.dbo.r_input_draft_model_expected_measurables inp
+INNER JOIN Analytics.dbo.r_output_draft_model_expected_measurables outp
+		ON inp.workout_id = outp.workout_id
+	   AND inp.adjusted_priority = outp.adjusted_priority
+	   AND inp.attempt = outp.attempt
+
+/*
+SELECT *
+FROM #temp_advanced_measurables
+--WHERE bane_player_id = 	73957
+ORDER BY adjusted_priority, attempt
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Unpivot the best runs and measures.
+
+OUTPUT TABLES:
+#temp_advanced_runs
+#temp_advanced_measures
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_advanced_runs exists, if it does drop it
+	IF OBJECT_ID('tempdb..#temp_advanced_runs') IS NOT NULL
+		DROP TABLE #temp_advanced_runs
+
+	SELECT bane_player_id
+		  ,draft_year
+		  ,age_at_draft
+		  ,position
+		  ,adjusted_priority
+		  ,attempt
+		  ,measurable_type
+		  ,value
+	  INTO #temp_advanced_runs
+      FROM #temp_advanced_measurables
+   UNPIVOT (value FOR measurable_type IN (forty_dash
+							  ,twenty_split
+							  ,ten_split
+							  ,flying_twenty
+							  ,flying_ten
+							  ,short_shuttle
+							  ,long_shuttle
+							  ,three_cone
+							  ,swim_right
+							  ,rip_left
+							  ,left_turn
+							  ,right_turn
+							  ,forty_dash_vs_expected
+							  ,twenty_split_vs_expected
+							  ,ten_split_vs_expected
+							  ,flying_twenty_vs_expected
+							  ,flying_ten_vs_expected
+							  ,short_shuttle_vs_expected
+							  ,long_shuttle_vs_expected
+							  ,three_cone_vs_expected
+							  ,swim_right_vs_expected
+							  ,rip_left_vs_expected
+							  ,left_turn_vs_expected
+							  ,right_turn_vs_expected
+							  ,forty_dash_adjusted
+							  ,twenty_split_adjusted
+							  ,ten_split_adjusted
+							  ,flying_twenty_adjusted
+							  ,flying_ten_adjusted
+							   )) AS me
+
+/*
+SELECT *
+FROM #temp_advanced_runs
+*/
+
+-- Check if #temp_advanced_measures exists, if it does drop it
+	IF OBJECT_ID('tempdb..#temp_advanced_measures') IS NOT NULL
+		DROP TABLE #temp_advanced_measures
+
+	SELECT bane_player_id
+		  ,draft_year
+		  ,age_at_draft
+		  ,position
+		  ,adjusted_priority
+		  ,attempt
+		  ,measurable_type
+		  ,value
+	  INTO #temp_advanced_measures
+      FROM #temp_advanced_measurables
+   UNPIVOT (value FOR measurable_type IN (height
+                              ,[weight]
+							  ,hand_size
+                              ,arm_length
+                              ,wingspan
+                              ,broad_jump
+							  ,vertical_jump
+                              ,bench_reps
+							  ,bench_work
+							  ,wonderlic
+							  ,throw_speed
+                              ,broad_jump_vs_expected
+							  ,vertical_jump_vs_expected
+                              ,bench_reps_vs_expected
+							  ,bench_work_vs_expected
+							  ,throw_speed_vs_expected
+							   )) AS me
+
+/*
+SELECT *
+FROM #temp_advanced_measures
+*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Order the player's measurables...if a player has combine measurables, use those.  If he 
+does not have combine measurables, use his adjusted pro day / workout / regional combine
+measurables (but include a dummy to represent that it isn't electronic).
+
+OUTPUT TABLES:
+#temp_advanced_measures_with_order
+#temp_advanced_runs_with_order
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_advanced_runs_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_advanced_runs_with_order') IS NOT NULL
+	DROP TABLE #temp_advanced_runs_with_order
+
+    SELECT *
+		  ,RANK() OVER (PARTITION BY bane_player_id, measurable_type ORDER BY adjusted_priority, value, attempt) AS order_for_models
+		  --,CASE WHEN adjusted_priority < 2 THEN 1 ELSE 0 END AS electronic
+	  INTO #temp_advanced_runs_with_order
+	  FROM #temp_advanced_runs
+
+/*
+SELECT *
+FROM #temp_advanced_runs_with_order
+*/
+
+-- Check if #temp_advanced_measures_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_advanced_measures_with_order') IS NOT NULL
+	DROP TABLE #temp_advanced_measures_with_order
+
+    SELECT *
+		  ,RANK() OVER (PARTITION BY bane_player_id, measurable_type ORDER BY adjusted_priority, value DESC, attempt) AS order_for_models
+		  --,CASE WHEN adjusted_priority < 2 THEN 1 ELSE 0 END AS electronic
+	  INTO #temp_advanced_measures_with_order
+	  FROM #temp_advanced_measures
+
+/*
+SELECT *
+FROM #temp_advanced_measures_with_order
+*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Append the ordered measures to the ordered runs table so that you can pivot the best ones.
+
+OUTPUT TABLES:
+#temp_advanced_measurables_all
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_advanced_measurables_all exists, if it does drop it
+	IF OBJECT_ID('tempdb..#temp_advanced_measurables_all') IS NOT NULL
+		DROP TABLE #temp_advanced_measurables_all
+
+	SELECT *
+	  INTO #temp_advanced_measurables_all
+	  FROM #temp_advanced_runs_with_order
+
+INSERT INTO #temp_advanced_measurables_all
+	SELECT *
+	  FROM #temp_advanced_measures_with_order
+
+/*
+SELECT * 
+FROM #temp_advanced_measurables_all
+WHERE bane_player_id = 34960
+*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Pivot the previous table so you can have one row for every player with his best value
+in every measurable. You appended before pivoting because you can just take the MAX
+in the pivot, even for when you want a MIN (like with runs) since if you only take
+where the order_for_models = 1, you already have the one you want.
+
+OUTPUT TABLES:
+#temp_advanced_measurables_pivot
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_advanced_measurables_pivot exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_advanced_measurables_pivot') IS NOT NULL
+	DROP TABLE #temp_advanced_measurables_pivot
+
+	SELECT bane_player_id
+		  ,draft_year
+		  ,age_at_draft
+		  ,position
+		  ,height
+		  ,[weight]
+		  ,hand_size
+		  ,arm_length
+		  ,wingspan
+		  ,broad_jump
+		  ,broad_jump_vs_expected
+		  ,vertical_jump
+		  ,vertical_jump_vs_expected
+		  ,bench_reps
+		  ,bench_reps_vs_expected
+		  ,bench_work
+		  ,bench_work_vs_expected
+		  ,wonderlic
+		  ,throw_speed
+		  ,throw_speed_vs_expected
+		  ,forty_dash
+		  ,forty_dash_vs_expected
+		  ,twenty_split
+		  ,twenty_split_vs_expected
+		  ,ten_split
+		  ,ten_split_vs_expected
+		  ,flying_twenty
+		  ,flying_twenty_vs_expected
+		  ,flying_ten
+		  ,flying_ten_vs_expected
+		  ,short_shuttle
+		  ,short_shuttle_vs_expected
+		  ,long_shuttle
+		  ,long_shuttle_vs_expected
+		  ,three_cone
+		  ,three_cone_vs_expected
+		  ,swim_right
+		  ,swim_right_vs_expected
+		  ,rip_left
+		  ,rip_left_vs_expected
+		  ,left_turn
+		  ,left_turn_vs_expected
+		  ,right_turn
+		  ,right_turn_vs_expected
+		  ,forty_dash_adjusted
+		  ,twenty_split_adjusted
+		  ,ten_split_adjusted
+		  ,flying_twenty_adjusted
+		  ,flying_ten_adjusted
+	  INTO #temp_advanced_measurables_pivot
+      FROM (
+      SELECT bane_player_id
+	  	  ,draft_year
+		  ,age_at_draft
+		  ,position
+		  ,order_for_models
+		  ,measurable_type
+		  ,value
+      FROM #temp_advanced_measurables_all WHERE measurable_type IN ('height', 'weight', 'arm_length', 'wingspan', 'hand_size', 'broad_jump', 'broad_jump_vs_expected', 'vertical_jump', 'vertical_jump_vs_expected', 'bench_reps', 'bench_reps_vs_expected', 'bench_work', 'bench_work_vs_expected', 'wonderlic', 'throw_speed', 'throw_speed_vs_expected', 'forty_dash', 'forty_dash_vs_expected', 'twenty_split', 'twenty_split_vs_expected', 'ten_split', 'ten_split_vs_expected', 'flying_twenty', 'flying_twenty_vs_expected', 'flying_ten', 'flying_ten_vs_expected', 'short_shuttle', 'short_shuttle_vs_expected', 'long_shuttle', 'long_shuttle_vs_expected', 'three_cone', 'three_cone_vs_expected', 'swim_right', 'swim_right_vs_expected', 'rip_left', 'rip_left_vs_expected', 'right_turn', 'right_turn_vs_expected', 'left_turn', 'left_turn_vs_expected','forty_dash_adjusted','twenty_split_adjusted','ten_split_adjusted','flying_twenty_adjusted','flying_ten_adjusted')) up
+     PIVOT (MAX(value) FOR measurable_type IN ([height], [weight], [arm_length], [wingspan], [hand_size], [broad_jump], [broad_jump_vs_expected], [vertical_jump], [vertical_jump_vs_expected], [bench_reps], [bench_reps_vs_expected], [bench_work], [bench_work_vs_expected], [wonderlic], [throw_speed], [throw_speed_vs_expected], [forty_dash], [forty_dash_vs_expected], [twenty_split], [twenty_split_vs_expected], [ten_split], [ten_split_vs_expected], [flying_twenty], [flying_twenty_vs_expected], [flying_ten], [flying_ten_vs_expected], [short_shuttle], [short_shuttle_vs_expected], [long_shuttle], [long_shuttle_vs_expected], [three_cone], [three_cone_vs_expected], [swim_right], [swim_right_vs_expected], [rip_left], [rip_left_vs_expected], [right_turn], [right_turn_vs_expected], [left_turn], [left_turn_vs_expected],[forty_dash_adjusted],[twenty_split_adjusted],[ten_split_adjusted],[flying_twenty_adjusted],[flying_ten_adjusted])) AS pvt
+	 WHERE order_for_models = 1
+  ORDER BY bane_player_id
+  
+/*
+SELECT * 
+FROM #temp_advanced_measurables_pivot
+WHERE bane_player_id = 51309
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Join his best measurables to his pro grade and salary data.
+
+OUTPUT TABLES:
+Analytics.dbo.r_input_post_combine_measurables
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+DECLARE @current_season INT
+SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+
+TRUNCATE TABLE Analytics.dbo.r_input_draft_model_post_combine_measurables
+
+INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_measurables
+    SELECT am.*
+		  ,CONCAT(pl.last_name,', ',pl.goes_by) AS player
+		  ,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(CAST(salaries AS FLOAT),0) END AS pct_of_cap
+		  ,season
+		  ,CASE WHEN pl.draft_year > @current_season THEN 1 ELSE season_in_league END AS season_in_league
+		  ,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
+	  FROM #temp_advanced_measurables_pivot am
+INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON am.bane_player_id = pl.id
+ LEFT JOIN AnalyticsWork.dbo.salaries_for_modeling sal
+		ON am.bane_player_id = sal.id
+	   AND sal.salaries NOT IN ('Injured','Pre-2011')
+ LEFT JOIN Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
+		ON am.bane_player_id = pg.bane_player_id
