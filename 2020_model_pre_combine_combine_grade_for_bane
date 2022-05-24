@@ -265,7 +265,62 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_final_scores_percentile') IS NOT NULL
 	INNER JOIN #temp_pre_combine_final_scores_pos_counts po
 		ON fs.position = po.position
 	
+	
+	
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(5)
+
+
+Find the grades only percentile.
+
+OUTPUT TABLES:
+#temp_pre_combine_grades_percentile
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_pre_combine_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_grades') IS NOT NULL
+	DROP TABLE #temp_pre_combine_grades
+
+	SELECT fs.bane_player_id
+		,final_prediction AS component_grades_prediction
+		,ISNULL(db.position,po.position) AS position
+		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY final_prediction DESC) AS final_prediction_rank
+	INTO #temp_pre_combine_grades
+	FROM [AnalyticsWork].[dbo].pre_combine_component_scores fs
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON fs.bane_player_id = pl.id 
+		AND pl.is_deleted = 0
+	LEFT JOIN #temp_draft_boards_latest db
+		ON fs.bane_player_id = db.bane_player_id
+	LEFT JOIN #temp_position_graded_as po
+		ON fs.bane_player_id = po.bane_player_id
+		AND po.position_order = 1
+
+
+-- Check if #temp_pre_combine_grades_pos_counts exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_grades_pos_counts') IS NOT NULL
+	DROP TABLE #temp_pre_combine_grades_pos_counts
 		
+	SELECT position
+		,COUNT(*) AS position_count
+	INTO #temp_pre_combine_grades_pos_counts
+	FROM #temp_pre_combine_grades
+	GROUP BY position
+
+
+-- Check if #temp_pre_combine_grades_percentile exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_grades_percentile') IS NOT NULL
+	DROP TABLE #temp_pre_combine_grades_percentile
+
+	SELECT fs.*
+		,(position_count - final_prediction_rank) / CAST(position_count AS FLOAT) as component_grades_percentile
+	INTO #temp_pre_combine_grades_percentile
+	FROM #temp_pre_combine_grades fs
+	INNER JOIN #temp_pre_combine_grades_pos_counts po
+		ON fs.position = po.position
+				
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -284,6 +339,8 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_final_buckets') IS NOT NULL
 	DROP TABLE #temp_pre_combine_final_buckets
 
 	SELECT fs.*
+		,component_grades_prediction
+		,component_grades_percentile
 		,CASE WHEN final_prediction_percentile >= percentile_80 THEN 8.0
 			WHEN final_prediction_percentile >= percentile_70 THEN 7.0
 			WHEN final_prediction_percentile >= percentile_69 THEN 6.9
@@ -299,11 +356,14 @@ IF OBJECT_ID('tempdb..#temp_pre_combine_final_buckets') IS NOT NULL
 			WHEN final_prediction_percentile >= percentile_56 THEN 5.6
 			WHEN final_prediction_percentile >= percentile_54 THEN 5.4
 			ELSE 5.0
-		END AS final_prediction_bucket			
+		END AS final_prediction_bucket		
 	INTO #temp_pre_combine_final_buckets
 	FROM #temp_pre_combine_final_scores_percentile fs
 	INNER JOIN #temp_board_percentiles pp
 		ON fs.position = pp.position
+	LEFT JOIN #temp_pre_combine_grades_percentile gr
+		ON fs.bane_player_id = gr.bane_player_id
+
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -538,11 +598,11 @@ IF OBJECT_ID('tempdb..#temp_draft_model_grades') IS NOT NULL
 		,NULL AS [measurables_number]
 		,NULL AS [measurables_percentile]
 		,NULL AS [measurables_grade_id]
-		,gs.model_score AS [component_grades_number]
-		,ROUND(gs.model_percentile * 100,0) AS [component_grades_percentile]
+		,component_grades_prediction AS [component_grades_number]
+		,ROUND(component_grades_percentile * 100,0) AS [component_grades_percentile]
 		,NULL AS [component_grades_grade_id]
 		,ps.production_score AS [production_number]
-		,ROUND(ps.production_percentile * 100,0) AS [production_percentile]
+		,ISNULL(ROUND(ps.production_percentile * 100,0),1) AS [production_percentile]
 		,NULL AS [production_grade_id]
 		,final_prediction AS [model_without_board_score]
 		,gr.id AS [model_without_board_grade_id]
@@ -558,8 +618,6 @@ IF OBJECT_ID('tempdb..#temp_draft_model_grades') IS NOT NULL
 		AND gr.[name] NOT LIKE '%specialist%'
 	LEFT JOIN #temp_production_scores ps
 		ON mo.bane_player_id = ps.bane_player_id
-	LEFT JOIN #temp_grades_scores gs
-		ON mo.bane_player_id = gs.bane_player_id
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
