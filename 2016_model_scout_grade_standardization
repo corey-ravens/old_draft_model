@@ -1,1075 +1,152 @@
---Should the standardization be done by grade level as well as scout and position and trait?
---	Inherently, players the the top of the board will have higher avg position specific grades
---		So this could potentially lead to some scouts (Eric, Chad, Vince) who tend to view the higher players to have higher average grades
---			And other scouts (Andrew) who tend to view the lower players to have lower average grades
 
 
---********************  UNPIVOT THE PLAYERS' RATINGS  ********************
 
---********************  CORNERS  ********************
--- Check if temp_stratbridge_rating_pivot_cb exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_cb') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_cb
 
-	SELECT id
-		  ,report_id
-		  ,'CB' AS report_position
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for normalizing scout grades.
+
+Should it be done by grade level as well as scout and position and trait?
+
+Inherently, players the the top of the board will have higher avg position specific grades
+
+So this could potentially lead to some scouts (Eric, Chad, Vince) who tend to view the higher players to have higher average grades
+
+And other scouts (Andrew) who tend to view the lower players to have lower average grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the master evaluations table.
+
+OUTPUT TABLES:
+##temp_evaluations_master
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_evaluations_master exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_evaluations_master') IS NOT NULL
+	DROP TABLE ##temp_evaluations_master
+
+    SELECT re.id AS report_id
+	      ,author_id AS scout_id
 		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_cb
-      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_corner_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_close_on_ball_grade
-										,position_specifics_hands_grade
-										,position_specifics_key_and_diagnose_grade
-										,position_specifics_man_to_man_coverage_grade
-										,position_specifics_range_grade
-										,position_specifics_run_support_tackling_grade
-										,position_specifics_zone_coverage_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
+		  ,re.position_id
+		  ,ev.[id] AS evaluation_id
+		  ,ev.skill_id
+		  ,sk.[code] AS skill_code
+		  ,sk.[type] AS skill_type
+		  ,sk.[name] AS skill_name
+		  ,gr.value		 
+	  INTO ##temp_evaluations_master
+      FROM [bane_production_analytics].[dbo].[reports] re
+ LEFT JOIN [bane_production_analytics].[dbo].[evaluations] ev
+        ON re.id=ev.report_id
+ LEFT JOIN [bane_production_analytics].[dbo].[skills] sk
+        ON ev.skill_id=sk.id
+ LEFT JOIN [bane_production_analytics].[dbo].[grades] gr
+        ON ev.grade_id=gr.id		
+	 WHERE 1=1
+	   AND UPPER(LTRIM(RTRIM(re.[type]))) IN ('CROSS-CHECK','DRAFT','FALL','POST CC')
+-------Below limits to only position specific, critical factor, and STICD grades on the 3 to 7 scale
+	   AND gr.scale_id = 5
+  ORDER BY re.id
+          ,ev.id
+		  ,sk.id
+		  ,gr.id
 
---********************  DEFENSIVE ENDS  ********************
--- Check if temp_stratbridge_rating_pivot_de exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_de') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_de
-
-	SELECT id
-		  ,report_id
-		  ,'DE' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_de
-      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_end_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_disengage_grade
-										,position_specifics_key_and_diagnose_grade
-										,position_specifics_lateral_movement_grade
-										,position_specifics_pass_rush_ability_grade
-										,position_specifics_point_of_attack_grade
-										,position_specifics_tackling_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  PASS RUSHERS  ********************
--- Check if temp_stratbridge_rating_pivot_rush exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_rush') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_rush
-
-	SELECT id
-		  ,report_id
-		  ,'RUSH' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_rush
-      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_end_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_disengage_grade
-										,position_specifics_key_and_diagnose_grade
-										,position_specifics_lateral_movement_grade
-										,position_specifics_pass_rush_ability_grade
-										,position_specifics_point_of_attack_grade
-										,position_specifics_tackling_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  SAFETIES  ********************
--- Check if temp_stratbridge_rating_pivot_ds exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_ds') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_ds
-
-	SELECT id
-		  ,report_id
-		  ,'DS' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_ds
-      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_safety_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_close_on_ball_grade
-										,position_specifics_hands_grade
-										,position_specifics_key_and_diagnose_grade
-										,position_specifics_man_to_man_coverage_grade
-										,position_specifics_range_grade
-										,position_specifics_run_support_tackling_grade
-										,position_specifics_zone_coverage_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  DEFENSIVE TACKLES  ********************
--- Check if temp_stratbridge_rating_pivot_dt exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_dt') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_dt
-
-	SELECT id
-		  ,report_id
-		  ,'DT' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_dt
-      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_tackle_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_disengage_grade
-										,position_specifics_key_and_diagnose_grade
-										,position_specifics_lateral_movement_grade
-										,position_specifics_pass_rush_ability_grade
-										,position_specifics_point_of_attack_grade
-										,position_specifics_tackling_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  FULLBACKS  ********************
--- Check if temp_stratbridge_rating_pivot_fb exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_fb') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_fb
-
-	SELECT id
-		  ,report_id
-		  ,'FB' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_fb
-      FROM RavensIncoming.dbo.stratbridge_ncaa_fullback_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_blitz_protect_grade
-										,position_specifics_elusiveness_grade
-										,position_specifics_inside_run_grade
-										,position_specifics_instincts_grade
-										,position_specifics_outside_run_grade
-										,position_specifics_protect_ball_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  INSIDE LINEBACKERS  ********************
--- Check if temp_stratbridge_rating_pivot_ib exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_ib') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_ib
-
-	SELECT id
-		  ,report_id
-		  ,'IB' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_ib
-      FROM RavensIncoming.dbo.stratbridge_ncaa_inside_backer_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_blitz_grade
-										,position_specifics_hand_use_grade
-										,position_specifics_key_and_diagnose_grade
-										,position_specifics_point_of_attack_grade
-										,position_specifics_pursuit_grade
-										,position_specifics_range_grade
-										,position_specifics_tackling_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
+--SELECT * FROM ##temp_evaluations_master
 
 
---********************  LONG SNAPPERS  ********************
--- Check if temp_stratbridge_rating_pivot_ls_pre_adjust exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_ls_pre_adjust') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_ls_pre_adjust
--- Check if temp_stratbridge_rating_pivot_ls exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_ls') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_ls
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-	SELECT id
-		  ,report_id
-		  ,'LS' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_ls_pre_adjust
-      FROM RavensIncoming.dbo.stratbridge_ncaa_long_snapper_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_key_and_diagnose_grade
-										,position_specifics_man_to_man_cover_grade
-										,position_specifics_zone_cover_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-	
-	SELECT id
-		  ,report_id
-		  ,report_position
-		  ,player_id
-		  ,scout_id
-		  ,CASE WHEN rating_type='position_specifics_key_and_diagnose_grade' THEN 'position_specifics_accuracy_grade'
-		        WHEN rating_type='position_specifics_man_to_man_cover_grade' THEN 'position_specifics_velocity_grade'
-				WHEN rating_type='position_specifics_zone_cover_grade' THEN 'position_specifics_coverage_grade'
-				ELSE rating_type
-				END AS rating_type
-		  ,rating
-	  INTO ##temp_stratbridge_rating_pivot_ls
-      FROM ##temp_stratbridge_rating_pivot_ls_pre_adjust
+Find each scout's mean and standard deviation grade
+value by position.
 
---********************  CENTERS  ********************
--- Check if temp_stratbridge_rating_pivot_oc exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_oc') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_oc
+OUTPUT TABLES:
+##temp_values_scout_mean_and_sd
 
-	SELECT id
-		  ,report_id
-		  ,'OC' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_oc
-      FROM RavensIncoming.dbo.stratbridge_ncaa_offensive_center_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_hand_quickness_grade
-										,position_specifics_pass_block_grade
-										,position_specifics_pickup_grade
-										,position_specifics_pulling_grade
-										,position_specifics_run_block_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
---********************  GUARDS  ********************
--- Check if temp_stratbridge_rating_pivot_og exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_og') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_og
+-- Check if ##temp_values_scout_mean_and_sd exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_values_scout_mean_and_sd') IS NOT NULL
+	DROP TABLE ##temp_values_scout_mean_and_sd
 
-	SELECT id
-		  ,report_id
-		  ,'OG' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_og
-      FROM RavensIncoming.dbo.stratbridge_ncaa_offensive_guard_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_hand_quickness_grade
-										,position_specifics_pass_block_grade
-										,position_specifics_pickup_grade
-										,position_specifics_pulling_grade
-										,position_specifics_run_block_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  OFFENSIVE TACKLES  ********************
--- Check if temp_stratbridge_rating_pivot_ot exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_ot') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_ot
-
-	SELECT id
-		  ,report_id
-		  ,'OT' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_ot
-      FROM RavensIncoming.dbo.stratbridge_ncaa_offensive_tackle_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_hand_quickness_grade
-										,position_specifics_pass_block_grade
-										,position_specifics_pickup_grade
-										,position_specifics_pulling_grade
-										,position_specifics_run_block_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  OUTSIDE LINEBACKERS  ********************
--- Check if temp_stratbridge_rating_pivot_ob exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_ob') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_ob
-
-	SELECT id
-		  ,report_id
-		  ,'OB' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_ob
-      FROM RavensIncoming.dbo.stratbridge_ncaa_outside_backer_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_blitz_grade
-										,position_specifics_hand_use_grade
-										,position_specifics_key_and_diagnose_grade
-										,position_specifics_point_of_attack_grade
-										,position_specifics_pursuit_grade
-										,position_specifics_range_grade
-										,position_specifics_tackling_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  PLACE KICKERS  ********************
--- Check if temp_stratbridge_rating_pivot_pk exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_pk') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_pk
-
-	SELECT id
-		  ,report_id
-		  ,'PK' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_pk
-      FROM RavensIncoming.dbo.stratbridge_ncaa_place_kicker_reports
-   UNPIVOT (rating FOR rating_type IN (character_grade
-										,durability_grade
-										,instinct_grade
-										,playing_speed_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_accuracy_grade
-										,position_specifics_foot_speed_grade
-										,position_specifics_plant_relation_grade
-										,position_specifics_pressure_kick_stability_grade
-										,position_specifics_rise_grade
-										,position_specifics_stepping_pattern_grade
-										,position_specifics_style_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  PUNTERS  ********************
--- Check if temp_stratbridge_rating_pivot_pt exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_pt') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_pt
-
-	SELECT id
-		  ,report_id
-		  ,'PT' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_pt
-      FROM RavensIncoming.dbo.stratbridge_ncaa_punter_reports
-   UNPIVOT (rating FOR rating_type IN (character_grade
-										,durability_grade
-										,instinct_grade
-										,playing_speed_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_approach_line_grade
-										,position_specifics_foot_speed_grade
-										,position_specifics_handling_time_grade
-										,position_specifics_hands_grade
-										,position_specifics_mental_stability_grade
-										,position_specifics_production_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  QUARTERBACKS  ********************
--- Check if temp_stratbridge_rating_pivot_qb_pre_adjust exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_qb_pre_adjust') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_qb_pre_adjust
--- Check if temp_stratbridge_rating_pivot_qb exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_qb') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_qb
-
-	SELECT id
-		  ,report_id
-		  ,'QB' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_qb_pre_adjust
-      FROM RavensIncoming.dbo.stratbridge_ncaa_quarterback_reports
-   UNPIVOT (rating FOR rating_type IN (summary_character_grade
-								        ,summary_durability_grade
-										,summary_instinct_grade
-										,summary_speed_grade
-										,summary_toughness_grade
-										,critical_factors_accuracy_grade
-										,critical_factors_arm_strength_grade
-										,critical_factors_competitiveness_grade
-										,critical_factors_mental_awareness_grade
-										,critical_factors_mobility_grade
-										,critical_factors_production_grade
-										,position_specifics_clean_chart_grade
-										,position_specifics_decision_making_grade
-										,position_specifics_pocket_awareness_grade
-										,position_specifics_release_grade
-										,position_specifics_setup_grade
-										,position_specifics_strength_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
-	SELECT id
-		  ,report_id
-		  ,report_position
-		  ,player_id
-		  ,scout_id
-		  ,CASE WHEN rating_type='summary_character_grade' THEN 'character_grade'
-		        WHEN rating_type='summary_durability_grade' THEN 'durability_grade'
-				WHEN rating_type='summary_instinct_grade' THEN 'instinct_grade'
-				WHEN rating_type='summary_speed_grade' THEN 'speed_grade'
-				WHEN rating_type='summary_toughness_grade' THEN 'toughness_grade'
-				ELSE rating_type
-				END AS rating_type
-		  ,rating
-	  INTO ##temp_stratbridge_rating_pivot_qb
-      FROM ##temp_stratbridge_rating_pivot_qb_pre_adjust
-
---********************  RUNNING BACKS  ********************
--- Check if temp_stratbridge_rating_pivot_rb exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_rb') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_rb
-
-	SELECT id
-		  ,report_id
-		  ,'RB' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_rb
-      FROM RavensIncoming.dbo.stratbridge_ncaa_running_back_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_specifics_blitz_protect_grade
-										,position_specifics_hands_grade
-										,position_specifics_inside_run_grade
-										,position_specifics_instincts_grade
-										,position_specifics_outside_run_grade
-										,position_specifics_protect_ball_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
---********************  TIGHT ENDS  ********************
--- Check if temp_stratbridge_rating_pivot_te_pre_adjust exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_te_pre_adjust') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_te_pre_adjust
--- Check if temp_stratbridge_rating_pivot_te exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_te') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_te
-
-	SELECT id
-		  ,report_id
-		  ,'TE' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_te_pre_adjust
-      FROM RavensIncoming.dbo.stratbridge_ncaa_tight_end_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_body_adjustment_grade
-										,position_specifics_hands_grade
-										,position_specifics_release_grade
-										,position_specifics_routes_rating
-										,position_specifics_run_after_catch_grade
-										,position_specifics_run_block_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
-	SELECT id
-		  ,report_id
-		  ,report_position
-		  ,player_id
-		  ,scout_id
-		  ,CASE WHEN rating_type='position_body_adjustment_grade' THEN 'position_specifics_body_adjustment_grade'
-				ELSE rating_type
-				END AS rating_type
-		  ,rating
-	  INTO ##temp_stratbridge_rating_pivot_te
-      FROM ##temp_stratbridge_rating_pivot_te_pre_adjust
-
---********************  WIDE RECEIVERS  ********************
--- Check if temp_stratbridge_rating_pivot_wr_pre_adjust exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_wr_pre_adjust') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_wr_pre_adjust
--- Check if temp_stratbridge_rating_pivot_wr exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_pivot_wr') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_pivot_wr
-
-	SELECT id
-		  ,report_id
-		  ,'WR' AS report_position
-		  ,player_id
-		  ,scout_id
-		  ,grades.rating_type
-		  ,grades.rating
-	  INTO ##temp_stratbridge_rating_pivot_wr_pre_adjust
-      FROM RavensIncoming.dbo.stratbridge_ncaa_wideout_reports
-   UNPIVOT (rating FOR rating_type IN (athletic_ability_grade
-								        ,character_grade
-										,competitiveness_grade
-										,durability_grade
-										,explosion_grade
-										,instinct_grade
-										,playing_speed_grade
-										,size_grade
-										,speed_grade
-										,toughness_grade
-										,position_body_adjustment_grade
-										,position_specifics_blitz_protection_grade
-										,position_specifics_play_making_grade
-										,position_specifics_release_grade
-										,position_specifics_routes_rating
-										,position_specifics_run_after_catch_grade
-										,position_specifics_special_teams_grade
-										)) AS grades
-     WHERE report_type IN (1,3,4)
-
-	SELECT id
-		  ,report_id
-		  ,report_position
-		  ,player_id
-		  ,scout_id
-		  ,CASE WHEN rating_type='position_body_adjustment_grade' THEN 'position_specifics_body_adjustment_grade'
-				ELSE rating_type
-				END AS rating_type
-		  ,rating
-	  INTO ##temp_stratbridge_rating_pivot_wr
-      FROM ##temp_stratbridge_rating_pivot_wr_pre_adjust
-
---********************  APPEND ALL THE POSIITONS INTO ONE TABLE  ********************
--- Check if temp_stratbridge_rating_all_positions exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_stratbridge_rating_all_positions') IS NOT NULL
-		DROP TABLE ##temp_stratbridge_rating_all_positions
-
-	SELECT *
-	  INTO ##temp_stratbridge_rating_all_positions
-	  FROM ##temp_stratbridge_rating_pivot_cb
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_de
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_rush
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_ds
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_dt
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_fb
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_ib
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_ls
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_oc
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_og
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_ot
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_ob
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_pk
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_pt
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_qb
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_rb
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_te
-	 UNION
-	SELECT *
-	  FROM ##temp_stratbridge_rating_pivot_wr
-  ORDER BY report_position, player_id, rating_type
-
-
---********************  STANDARDIZE THE RATINGS BY SCOUT AND POSITION  ********************
--- Check if temp_scout_rating_standardization exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_scout_rating_standardization') IS NOT NULL
-		DROP TABLE ##temp_scout_rating_standardization
--- Check if temp_rating_with_z_scores exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_rating_with_z_scores') IS NOT NULL
-		DROP TABLE ##temp_rating_with_z_scores
--- Check if temp_player_standardized_ratings exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_player_standardized_ratings') IS NOT NULL
-		DROP TABLE ##temp_player_standardized_ratings
-
---Find each scout's average and standard deviation
     SELECT scout_id
-          ,first_name
-		  ,last_name
-		  ,report_position
-		  ,rating_type
-	      ,AVG(CAST(rating AS NUMERIC(9,7))) AS rating_avg 
-		  ,STDEVP(rating) AS rating_stdev
-	  INTO ##temp_scout_rating_standardization
-      FROM ##temp_stratbridge_rating_all_positions ratings
-INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
-        ON ratings.scout_id=scouts.id
-  GROUP BY scout_id, first_name, last_name, report_position, rating_type
+		  ,position_id
+		  ,skill_id
+		  ,skill_code
+	      ,AVG(CAST(value AS NUMERIC(9,7))) AS value_mean 
+		  ,STDEVP(CAST(value AS NUMERIC(9,7)))  AS value_stdev
+	  INTO ##temp_values_scout_mean_and_sd
+      FROM ##temp_evaluations_master
+  GROUP BY scout_id
+		  ,position_id
+		  ,skill_id
+		  ,skill_code
 
---Create z-scores
-    SELECT id
-		  ,report_id
-		  ,ratings.report_position
-		  ,player_id
-		  ,ratings.scout_id
-		  ,ratings.rating_type
-		  ,rating
-	      ,(rating-rating_avg) / NULLIF(rating_stdev,0) AS rating_z_score
-	  INTO ##temp_rating_with_z_scores
-      FROM ##temp_stratbridge_rating_all_positions ratings
-INNER JOIN ##temp_scout_rating_standardization zscore
-        ON ratings.scout_id=zscore.scout_id
-	   AND ratings.rating_type=zscore.rating_type
-	   AND ratings.report_position=zscore.report_position
+--SELECT * FROM ##temp_values_scout_avg_and_sd
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Turn each grade value into a z-score.
+
+OUTPUT TABLES:
+##temp_values_with_z
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_values_with_z exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_values_with_z') IS NOT NULL
+	DROP TABLE ##temp_values_with_z
+
+    SELECT ma.*
+	      ,value_mean 
+		  ,value_stdev		   
+		  ,(ma.value - value_mean) / NULLIF(value_stdev,0) AS value_z_score
+	  INTO ##temp_values_with_z
+      FROM ##temp_evaluations_master ma
+INNER JOIN ##temp_values_scout_mean_and_sd ms
+	    ON ma.scout_id = ms.scout_id
+	   AND ma.position_id = ms.position_id
+	   AND ma.skill_id = ms.skill_id
+
+--SELECT * FROM ##temp_values_with_z
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Get the mean normalized grades for each player
+
+OUTPUT TABLES:
+##temp_evaluations_player_means
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_evaluations_player_means exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_evaluations_player_means') IS NOT NULL
+	DROP TABLE ##temp_evaluations_player_means
+
+    SELECT player_id
+		  ,skill_id
+		  ,skill_code
+		  ,skill_type
+		  ,skill_name
+		  ,AVG(value_z_score) AS value_z_score_player_mean	      
+	  INTO ##temp_evaluations_player_means
+      FROM ##temp_values_with_z
+  GROUP BY player_id
+  		  ,skill_id
+		  ,skill_code
+		  ,skill_type
+		  ,skill_name
   ORDER BY player_id
+  		  ,skill_id
+		  ,skill_code
+		  ,skill_type
+		  ,skill_name
 
- --Get the average standardized grades for each player
-    SELECT player_id
-		  ,rating_type
-		  ,AVG(rating_z_score) AS rating_z_score_player_avg
-	  INTO ##temp_player_standardized_ratings
-	  FROM ##temp_rating_with_z_scores
-  GROUP BY player_id, rating_type
-  ORDER BY player_id, rating_type
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  --********************  UNPIVOT THE PLAYERS' MEASURABLES  ********************
-
--- Check if temp_ravens_measurables exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_ravens_measurables') IS NOT NULL
-		DROP TABLE ##temp_ravens_measurables
-
--- Get all of the player measurables into one table
-SELECT DISTINCT CollegePlayerID
-	  ,meas.player_id
-	  ,GSISID
-	  ,report_position
-	  ,CAST(((CAST(SUBSTRING(height,1,1) AS INT) * 12) + CAST(SUBSTRING(meas.height,2,2) AS INT) + (CAST(SUBSTRING(height,4,1) AS INT) * .125)) AS NUMERIC(9,3)) AS height
-	  ,CAST(weight AS NUMERIC(9,3)) AS weight
-	  ,CAST((CAST(SUBSTRING(arm_length,1,2) AS INT) + (CAST(SUBSTRING(arm_length,4,1) AS INT) * .125)) AS NUMERIC(9,3)) AS arm_length
-	  ,CASE WHEN SUBSTRING(hand_span,1,1)='1' THEN CAST((CAST(SUBSTRING(hand_span,1,2) AS INT) + (CAST(SUBSTRING(hand_span,4,1) AS INT) * .125)) AS NUMERIC(9,3))
-	   ELSE CAST((CAST(SUBSTRING(hand_span,1,1) AS INT) + (CAST(SUBSTRING(hand_span,3,1) AS INT) * .125)) AS NUMERIC(9,3))
-	   END AS hand_span
-	  ,CAST((CAST(SUBSTRING(wing_span,1,2) AS INT) + (CAST(SUBSTRING(wing_span,4,1) AS INT) * .125)) AS NUMERIC(9,3)) AS wing_span
-	  ,CAST(test_correct AS NUMERIC(9,3)) AS test_correct
-	  ,COALESCE(
-			CASE --WHEN forty_yard_dash_second_attempt < forty_yard_dash_third_attempt AND forty_yard_dash_second_attempt < forty_yard_dash_fourth_attempt THEN forty_yard_dash_second_attempt
-			WHEN forty_yard_dash_second_attempt < forty_yard_dash_third_attempt AND forty_yard_dash_second_attempt < forty_yard_dash_fourth_attempt THEN CAST(forty_yard_dash_second_attempt AS NUMERIC(9,3))
-			WHEN forty_yard_dash_third_attempt < forty_yard_dash_second_attempt AND forty_yard_dash_third_attempt < forty_yard_dash_fourth_attempt THEN CAST(forty_yard_dash_third_attempt AS NUMERIC(9,3))
-			ELSE CAST(forty_yard_dash_fourth_attempt AS NUMERIC(9,3))
-			END 
-			,CAST(forty_yard_dash_average AS NUMERIC(9,3))
-			) AS forty_yard_dash
-	  ,COALESCE(
-			CASE WHEN twenty_yard_dash_first_attempt < twenty_yard_dash_second_attempt AND twenty_yard_dash_first_attempt < twenty_yard_dash_third_attempt AND twenty_yard_dash_first_attempt < twenty_yard_dash_fourth_attempt THEN CAST(twenty_yard_dash_first_attempt AS NUMERIC(9,3))
-			WHEN twenty_yard_dash_second_attempt < twenty_yard_dash_first_attempt AND twenty_yard_dash_second_attempt < twenty_yard_dash_third_attempt AND twenty_yard_dash_second_attempt < twenty_yard_dash_fourth_attempt THEN CAST(twenty_yard_dash_second_attempt AS NUMERIC(9,3))
-			WHEN twenty_yard_dash_third_attempt < twenty_yard_dash_first_attempt AND twenty_yard_dash_third_attempt < twenty_yard_dash_second_attempt AND twenty_yard_dash_third_attempt < twenty_yard_dash_fourth_attempt THEN CAST(twenty_yard_dash_third_attempt AS NUMERIC(9,3))
-			ELSE CAST(twenty_yard_dash_fourth_attempt AS NUMERIC(9,3))
-			END 
-			,CAST(twenty_yard_dash_average AS NUMERIC(9,3))
-			) AS twenty_yard_dash
-	  ,COALESCE(
-			CASE WHEN ten_yard_dash_first_attempt < ten_yard_dash_second_attempt AND ten_yard_dash_first_attempt < ten_yard_dash_dash_third_attempt AND ten_yard_dash_first_attempt < ten_yard_dash_dash_fourth_attempt THEN CAST(ten_yard_dash_first_attempt AS NUMERIC(9,3)) 
-			WHEN ten_yard_dash_second_attempt < ten_yard_dash_first_attempt AND ten_yard_dash_second_attempt < ten_yard_dash_dash_third_attempt AND ten_yard_dash_second_attempt < ten_yard_dash_dash_fourth_attempt THEN CAST(ten_yard_dash_second_attempt AS NUMERIC(9,3)) 
-			WHEN ten_yard_dash_dash_third_attempt < ten_yard_dash_first_attempt AND ten_yard_dash_dash_third_attempt < ten_yard_dash_second_attempt AND ten_yard_dash_dash_third_attempt < ten_yard_dash_dash_fourth_attempt THEN CAST(ten_yard_dash_dash_third_attempt AS NUMERIC(9,3)) 
-			ELSE CAST(ten_yard_dash_dash_fourth_attempt AS NUMERIC(9,3)) 
-			END
-			,CAST(ten_yard_dash_average AS NUMERIC(9,3))
-			) AS ten_yard_dash
-	  --,CAST(bench_press_reps_first_attempt AS NUMERIC(9,3)) AS bench_press_reps
-	  ,COALESCE(
-		   CASE WHEN broad_jump_first_attempt_inches > broad_jump_second_attempt_inches THEN CAST(broad_jump_first_attempt_inches AS NUMERIC(9,3))
-		   ELSE CAST(broad_jump_second_attempt_inches AS NUMERIC(9,3))
-		   END
-		   ,CAST(broad_jump_average_in_inches AS NUMERIC(9,3))
-		   ) AS broad_jump
-	  ,COALESCE(
-		   CASE WHEN three_cone_first_attempt < three_cone_second_attempt THEN CAST(three_cone_first_attempt AS NUMERIC(9,3))
-		   ELSE CAST(three_cone_second_attempt AS NUMERIC(9,3))
-		   END
-		   ,CAST(three_cone_average AS NUMERIC(9,3))
-		   ) AS three_cone	
-	  ,COALESCE(
-		   CASE WHEN vertical_jump_first_attempt > vertical_jump_second_attempt THEN CAST(vertical_jump_first_attempt AS NUMERIC(9,3))
-		   ELSE CAST(vertical_jump_second_attempt AS NUMERIC(9,3))
-		   END
-		   ,CAST(vertical_jump_average AS NUMERIC(9,3))
-		   ) AS vertical_jump
-	  ,COALESCE(
-		   CASE WHEN short_shuttle_first_attempt < short_shuttle_second_attempt THEN CAST(short_shuttle_first_attempt AS NUMERIC(9,3)) 
-		   ELSE CAST(short_shuttle_second_attempt AS NUMERIC(9,3)) 
-		   END
-		   ,CAST(short_shuttle_average AS NUMERIC(9,3)) 
-		   ) AS short_shuttle	
-	  ,COALESCE(
-		   CASE WHEN long_shuttle_first_attempt < long_shuttle_second_attempt THEN CAST(long_shuttle_first_attempt AS NUMERIC(9,3)) 
-		   ELSE CAST(long_shuttle_second_attempt AS NUMERIC(9,3)) 
-		   END
-		   ,CAST(long_shuttle_average AS NUMERIC(9,3)) 
-		   ) AS long_shuttle	
-	  ,CASE WHEN long_snap_first_attempt < long_snap_second_attempt AND long_snap_first_attempt < long_snap_third_attempt AND long_snap_first_attempt < long_snap_fourth_attempt THEN CAST(long_snap_first_attempt AS NUMERIC(9,3)) 
-			WHEN long_snap_second_attempt < long_snap_first_attempt AND long_snap_second_attempt < long_snap_third_attempt AND long_snap_second_attempt < long_snap_fourth_attempt THEN CAST(long_snap_second_attempt AS NUMERIC(9,3)) 
-			WHEN long_snap_third_attempt < long_snap_first_attempt AND long_snap_third_attempt < long_snap_second_attempt AND long_snap_third_attempt < long_snap_fourth_attempt THEN CAST(long_snap_third_attempt AS NUMERIC(9,3)) 
-			ELSE CAST(long_snap_fourth_attempt AS NUMERIC(9,3)) 
-			END AS long_snap
-        INTO ##temp_ravens_measurables 
-        FROM RavensIncoming.dbo.ravens_measurables meas
-  INNER JOIN ##temp_stratbridge_rating_all_positions ratings
-		  ON meas.player_id=ratings.player_id
-    ORDER BY report_position
-
-	-- Check if temp_ravens_measurables_unpivot exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_ravens_measurables_unpivot') IS NOT NULL
-		DROP TABLE ##temp_ravens_measurables_unpivot
-
-	SELECT CollegePlayerID as college_player_id
-		  ,player_id
-	      ,GSISID
-	      ,report_position
-		  ,measurables.measurable_type
-		  ,measurables.measurable
-	  INTO ##temp_ravens_measurables_unpivot
-      FROM ##temp_ravens_measurables
-   UNPIVOT (measurable FOR measurable_type IN (height
-								        ,weight
-								        ,arm_length
-								        ,hand_span
-								        ,wing_span
-								        ,test_correct
-								        ,forty_yard_dash
-								        ,twenty_yard_dash
-								        --,ten_yard_dash
-								        --,bench_press_reps
-								        ,broad_jump
-								        ,three_cone
-								        ,vertical_jump
-								        ,short_shuttle
-								        ,long_shuttle
-								        ,long_snap
-										)) AS measurables
-
-
---********************  STANDARDIZE THE MEASURABLES BY POSITION  ********************
--- Check if temp_measurable_mean_and_stdev, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_measurable_mean_and_stdev') IS NOT NULL
-		DROP TABLE ##temp_measurable_mean_and_stdev
--- Check if temp_measurables_with_z_scores, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_measurables_with_z_scores') IS NOT NULL
-		DROP TABLE ##temp_measurables_with_z_scores
-
---Find each position's average and standard deviation
-    SELECT report_position
-		  ,measurable_type
-	      ,AVG(CAST(measurable AS NUMERIC(11,7))) AS measurable_avg 
-		  ,STDEVP(measurable) AS measurable_stdev
-	  INTO ##temp_measurable_mean_and_stdev
-      FROM ##temp_ravens_measurables_unpivot
-  GROUP BY report_position, measurable_type
-
---Create z-scores...case statement is to flip measurables where lower is better (40 time, etc.) so that a positive z-score is always a good thing
-    SELECT measurables.*
-	      ,CASE WHEN measurables.measurable_type IN ('three_cone','forty_yard_dash','twenty_yard_dash','ten_yard_dash','long_shuttle','short_shuttle') THEN ((measurable-measurable_avg) / NULLIF(measurable_stdev,0))*-1
-		   ELSE (measurable-measurable_avg) / NULLIF(measurable_stdev,0) 
-		   END AS measurable_z_score
-	  INTO ##temp_measurables_with_z_scores
-      FROM ##temp_ravens_measurables_unpivot measurables
-INNER JOIN ##temp_measurable_mean_and_stdev zscore
-        ON measurables.measurable_type=zscore.measurable_type
-	   AND measurables.report_position=zscore.report_position
-  ORDER BY player_id
-  
-
--- Check if temp_measurables_z_scores_all exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measurables_z_scores_all') IS NOT NULL
-	DROP TABLE ##temp_measurables_z_scores_all
-
-    SELECT player_id
-	      ,GSISID
-	      ,report_position
-		  ,height AS height_z_score
-		  ,weight AS weight_z_score
-		  ,arm_length AS arm_length_z_score
-		  ,hand_span AS hand_span_z_score
-		  ,wing_span AS wing_span_z_score
-		  ,test_correct AS test_correct_z_score
-		  ,forty_yard_dash AS forty_yard_dash_z_score
-		  ,twenty_yard_dash AS twenty_yard_dash_z_score
-		  ,broad_jump AS broad_jump_z_score
-		  ,three_cone AS three_cone_z_score
-		  ,vertical_jump AS vertical_jump_z_score
-		  ,short_shuttle AS short_shuttle_z_score
-		  ,long_shuttle AS long_shuttle_z_score
-		  ,long_snap AS long_snap_z_score
-	  INTO ##temp_measurables_z_scores_all
-      FROM (
-    SELECT player_id
-	      ,GSISID
-	      ,report_position
-		  ,measurable_type
-		  ,measurable_z_score
-      FROM ##temp_measurables_with_z_scores) up
-     PIVOT (SUM(measurable_z_score) FOR measurable_type IN (height, weight, arm_length, hand_span,wing_span,test_correct,forty_yard_dash,twenty_yard_dash,broad_jump,three_cone,vertical_jump,short_shuttle,long_shuttle,long_snap)) AS pvt
-  ORDER BY player_id
-
--- Assign Target Player and create all the empty variables for his measurables to go into
-
-DECLARE @player_id AS INT = 41308
-
---These variables are for his z-scores
-DECLARE @main_player_height_z_score AS NUMERIC(9,7)
-DECLARE @main_player_weight_z_score AS NUMERIC(9,7)
-DECLARE @main_player_arm_length_z_score AS NUMERIC(9,7)
-DECLARE @main_player_hand_span_z_score AS NUMERIC(9,7)
-DECLARE @main_player_wing_span_z_score AS NUMERIC(9,7)
-DECLARE @main_player_test_correct_z_score AS NUMERIC(9,7)
-DECLARE @main_player_forty_yard_dash_z_score AS NUMERIC(9,7)
-DECLARE @main_player_twenty_yard_dash_z_score AS NUMERIC(9,7)
-DECLARE @main_player_ten_yard_dash_z_score AS NUMERIC(9,7)
-DECLARE @main_player_bench_press_reps_z_score AS NUMERIC(9,7)
-DECLARE @main_player_broad_jump_z_score AS NUMERIC(9,7)
-DECLARE @main_player_three_cone_z_score AS NUMERIC(9,7)
-DECLARE @main_player_vertical_jump_z_score AS NUMERIC(9,7)
-DECLARE @main_player_short_shuttle_z_score AS NUMERIC(9,7)
-DECLARE @main_player_long_shuttle_z_score AS NUMERIC(9,7)
-DECLARE @main_player_long_snap_z_score AS NUMERIC(9,7)
-
-
--- Select the target player's measurable z-scores into the empty variables
-    SELECT @main_player_height_z_score = height_z_score
-		  ,@main_player_weight_z_score = weight_z_score
-	      ,@main_player_arm_length_z_score = arm_length_z_score
-		  ,@main_player_hand_span_z_score = hand_span_z_score
-		  ,@main_player_wing_span_z_score = wing_span_z_score
-		  ,@main_player_test_correct_z_score = test_correct_z_score
-		  ,@main_player_forty_yard_dash_z_score = forty_yard_dash_z_score
-		  ,@main_player_twenty_yard_dash_z_score = twenty_yard_dash_z_score
-		  --,@main_player_ten_yard_dash_z_score = ten_yard_dash_z_score
-		  --,@main_player_bench_press_reps_z_score = bench_press_reps_z_score
-		  ,@main_player_broad_jump_z_score = broad_jump_z_score
-		  ,@main_player_three_cone_z_score = three_cone_z_score
-		  ,@main_player_vertical_jump_z_score = vertical_jump_z_score
-		  ,@main_player_short_shuttle_z_score = short_shuttle_z_score
-		  ,@main_player_long_shuttle_z_score = long_shuttle_z_score
-		  ,@main_player_long_snap_z_score = long_snap_z_score
-      FROM ##temp_measurables_z_scores_all
-	 WHERE player_id=@player_id
-
--- Check if temp_measurables_z_scores_differences, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measurables_z_scores_differences') IS NOT NULL
-	DROP TABLE ##temp_measurables_z_scores_differences
-
--- now create a table that gets the difference between the main player and all other players (at his position only? or should we allow cross position comps?)
--- Find the z-score differences between the target player and all other players
-    SELECT player_id
-	      ,GSISID
-		  ,report_position
-	      --,first_name
-	      --,last_name
-	      ,CASE WHEN @main_player_height_z_score IS NOT NULL THEN ABS(height_z_score-@main_player_height_z_score) ELSE NULL END AS height_z_score_difference
-		  ,CASE WHEN @main_player_weight_z_score IS NOT NULL THEN ABS(weight_z_score-@main_player_weight_z_score) ELSE NULL END AS weight_z_score_difference
-	      ,CASE WHEN @main_player_arm_length_z_score IS NOT NULL THEN ABS(arm_length_z_score-@main_player_arm_length_z_score) ELSE NULL END AS arm_length_z_score_difference
-		  ,CASE WHEN @main_player_hand_span_z_score IS NOT NULL THEN ABS(hand_span_z_score-@main_player_hand_span_z_score) ELSE NULL END AS hand_span_z_score_difference
-		  ,CASE WHEN @main_player_wing_span_z_score IS NOT NULL THEN ABS(wing_span_z_score-@main_player_wing_span_z_score) ELSE NULL END AS wing_span_z_score_difference
-		  ,CASE WHEN @main_player_test_correct_z_score IS NOT NULL THEN ABS(test_correct_z_score-@main_player_test_correct_z_score) ELSE NULL END AS test_correct_z_score_difference
-		  ,CASE WHEN @main_player_forty_yard_dash_z_score IS NOT NULL THEN ABS(forty_yard_dash_z_score-@main_player_forty_yard_dash_z_score) ELSE NULL END AS forty_yard_dash_z_score_difference
-		  ,CASE WHEN @main_player_twenty_yard_dash_z_score IS NOT NULL THEN ABS(twenty_yard_dash_z_score-@main_player_twenty_yard_dash_z_score) ELSE NULL END AS twenty_yard_dash_z_score_difference
-		  --,CASE WHEN @main_player_ten_yard_dash_z_score IS NOT NULL THEN ABS(ten_yard_dash_z_score-@main_player_ten_yard_dash_z_score) ELSE NULL END AS ten_yard_dash_z_score_difference
-		  --,CASE WHEN @main_player_bench_press_reps_z_score IS NOT NULL THEN ABS(bench_press_reps_z_score-@main_player_bench_press_reps_z_score) ELSE NULL END AS bench_press_reps_z_score_difference
-		  ,CASE WHEN @main_player_broad_jump_z_score IS NOT NULL THEN ABS(broad_jump_z_score-@main_player_broad_jump_z_score) ELSE NULL END AS broad_jump_z_score_difference
-		  ,CASE WHEN @main_player_three_cone_z_score IS NOT NULL THEN ABS(three_cone_z_score-@main_player_three_cone_z_score) ELSE NULL END AS three_cone_z_score_difference
-		  ,CASE WHEN @main_player_vertical_jump_z_score IS NOT NULL THEN ABS(vertical_jump_z_score-@main_player_vertical_jump_z_score) ELSE NULL END AS vertical_jump_z_score_difference
-		  ,CASE WHEN @main_player_short_shuttle_z_score IS NOT NULL THEN ABS(short_shuttle_z_score-@main_player_short_shuttle_z_score) ELSE NULL END AS short_shuttle_z_score_difference
-		  ,CASE WHEN @main_player_long_shuttle_z_score IS NOT NULL THEN ABS(long_shuttle_z_score-@main_player_long_shuttle_z_score) ELSE NULL END AS long_shuttle_z_score_difference
-		  ,CASE WHEN @main_player_long_snap_z_score IS NOT NULL THEN ABS(long_snap_z_score-@main_player_long_snap_z_score) ELSE NULL END AS long_snap_z_score_difference
-	  INTO ##temp_measurables_z_scores_differences
-	  FROM ##temp_measurables_z_scores_all 
-	 WHERE player_id!=@player_id
-  
-    SELECT *
-      FROM ##temp_measurables_z_scores_differences zdiff
-INNER JOIN RavensIncoming.dbo.club_db_player_extracts player
-		  ON zdiff.player_id=player.id
-
-
+--SELECT * FROM ##temp_evaluations_player_means
