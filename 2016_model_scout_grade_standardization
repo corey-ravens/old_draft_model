@@ -22,25 +22,62 @@ And other scouts (Andrew) who tend to view the lower players to have lower avera
 Create the master evaluations table.
 
 OUTPUT TABLES:
-##temp_evaluations_master
+##temp_evaluations_3_to_7
+##temp_evaluations_overall
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
--- Check if ##temp_evaluations_master exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_evaluations_master') IS NOT NULL
-	DROP TABLE ##temp_evaluations_master
+-- Check if ##temp_evaluations_3_to_7 exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_evaluations_3_to_7') IS NOT NULL
+	DROP TABLE ##temp_evaluations_3_to_7
 
     SELECT re.id AS report_id
 	      ,author_id AS scout_id
 		  ,player_id
-		  ,re.position_id
+		  ,CASE WHEN re.position_id IS NULL THEN -999 ELSE re.position_id END AS position_id
 		  ,ev.[id] AS evaluation_id
-		  ,ev.skill_id
-		  ,sk.[code] AS skill_code
-		  ,sk.[type] AS skill_type
-		  ,sk.[name] AS skill_name
-		  ,gr.value		 
-	  INTO ##temp_evaluations_master
+		  ,CASE WHEN ev.skill_id IN (1370,1389) THEN 1370
+		        WHEN ev.skill_id IN (1414,1418) THEN 1414
+				WHEN ev.skill_id IN (1448,1363) THEN 1448
+				WHEN ev.skill_id IN (1364,1449) THEN 1364
+				WHEN ev.skill_id IN (1426,1446) THEN 1426
+				WHEN ev.skill_id IN (1401,1397) THEN 1401
+				WHEN ev.skill_id IN (1420,1400) THEN 1420
+				WHEN ev.skill_id IN (1416,1411) THEN 1416
+				ELSE ev.skill_id
+		   END AS skill_id
+		  ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'CF-CMP'
+		        WHEN ev.skill_id IN (1414,1418) THEN 'PS-PASS/R'
+				WHEN ev.skill_id IN (1448,1363) THEN 'PS-BLOCK'
+				WHEN ev.skill_id IN (1364,1449) THEN 'PS-HNDS'
+				WHEN ev.skill_id IN (1426,1446) THEN 'PS-PRESS/K/MENT'
+				WHEN ev.skill_id IN (1401,1397) THEN 'PS-REL'
+				WHEN ev.skill_id IN (1420,1400) THEN 'PS-SUS/RUNB'
+				WHEN ev.skill_id IN (1416,1411) THEN 'PS-SHD/B/HNDS'
+				ELSE sk.[code]
+		   END AS skill_code
+		  ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'critical factors'
+		        WHEN ev.skill_id IN (1414,1418) THEN 'position specifics'
+				WHEN ev.skill_id IN (1448,1363) THEN 'position specifics'
+				WHEN ev.skill_id IN (1364,1449) THEN 'position specifics'
+				WHEN ev.skill_id IN (1426,1446) THEN 'position specifics'
+				WHEN ev.skill_id IN (1401,1397) THEN 'position specifics'
+				WHEN ev.skill_id IN (1420,1400) THEN 'position specifics'
+				WHEN ev.skill_id IN (1416,1411) THEN 'position specifics'
+				ELSE sk.[type]
+		   END AS skill_type
+		  ,CASE WHEN ev.skill_id IN (1370,1389) THEN 'Competitiveness'
+		        WHEN ev.skill_id IN (1414,1418) THEN 'Pass Rush Ability'
+				WHEN ev.skill_id IN (1448,1363) THEN 'Blocking'
+				WHEN ev.skill_id IN (1364,1449) THEN 'Hands'
+				WHEN ev.skill_id IN (1426,1446) THEN 'Pressure Kicks / Mental Stability'
+				WHEN ev.skill_id IN (1401,1397) THEN 'Release'
+				WHEN ev.skill_id IN (1420,1400) THEN 'Sustain / Run Blocking'
+				WHEN ev.skill_id IN (1416,1411) THEN 'Shed Blockers / Use of Hands'
+				ELSE sk.[name]
+		   END AS skill_name
+		  ,CAST(gr.value AS FLOAT) AS value		 
+	  INTO ##temp_evaluations_3_to_7
       FROM [bane_production_analytics].[dbo].[reports] re
  LEFT JOIN [bane_production_analytics].[dbo].[evaluations] ev
         ON re.id=ev.report_id
@@ -50,6 +87,7 @@ IF OBJECT_ID('tempdb..##temp_evaluations_master') IS NOT NULL
         ON ev.grade_id=gr.id		
 	 WHERE 1=1
 	   AND UPPER(LTRIM(RTRIM(re.[type]))) IN ('CROSS-CHECK','DRAFT','FALL','POST CC')
+	   AND is_deleted = 0
 -------Below limits to only position specific, critical factor, and STICD grades on the 3 to 7 scale
 	   AND gr.scale_id = 5
   ORDER BY re.id
@@ -57,69 +95,110 @@ IF OBJECT_ID('tempdb..##temp_evaluations_master') IS NOT NULL
 		  ,sk.id
 		  ,gr.id
 
---SELECT * FROM ##temp_evaluations_master
+--SELECT distinct position_id FROM ##temp_evaluations_3_to_7
 
+
+-- Check if ##temp_evaluations_overall exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_evaluations_overall') IS NOT NULL
+	DROP TABLE ##temp_evaluations_overall
+
+    SELECT re.id AS report_id
+	      ,author_id AS scout_id
+		  ,player_id
+		  ,CASE WHEN re.position_id IS NULL THEN -999 ELSE re.position_id END AS position_id
+		  ,NULL AS evaluation_id
+		  ,-999 AS skill_id
+		  ,'GRADE' AS skill_code
+		  ,NULL AS skill_type
+		  ,NULL AS skill_name
+		  ,CASE WHEN CAST(gr.value AS NUMERIC (3,1)) IN (8.0) THEN 100
+		        WHEN CAST(gr.value AS NUMERIC (3,1)) IN (7.0) THEN 92
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.9) THEN 82
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.7,6.5) THEN 71
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.3) THEN 64
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.1,6.0) THEN 58
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.9) THEN 53.5
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.8) THEN 50
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.7) THEN 47
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.6) THEN 45.5
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.4) THEN 43
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.2) THEN 41
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.0) THEN 40
+				ELSE NULL
+		   END AS value		 
+	  INTO ##temp_evaluations_overall
+      FROM [bane_production_analytics].[dbo].[reports] re
+ LEFT JOIN [bane_production_analytics].[dbo].[grades] gr
+        ON re.grade_id=gr.id		
+	 WHERE 1=1
+	   AND is_deleted = 0
+	   AND UPPER(LTRIM(RTRIM(re.[type]))) IN ('CROSS-CHECK','DRAFT','FALL','POST CC')
+-------Below limits to only overall grades
+	   AND gr.scale_id IN (4,6)
+  ORDER BY re.id     
+		  ,gr.id
+
+--SELECT * FROM ##temp_evaluations_overall
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Find each scout's mean and standard deviation grade
-value by position.
+Append the overall grades to the 3 to 7 scale grades.
 
 OUTPUT TABLES:
-##temp_values_scout_mean_and_sd
+##temp_evaluations_master
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
--- Check if ##temp_values_scout_mean_and_sd exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_values_scout_mean_and_sd') IS NOT NULL
-	DROP TABLE ##temp_values_scout_mean_and_sd
+-- Check if ##temp_evaluations_master exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_evaluations_master') IS NOT NULL
+	DROP TABLE ##temp_evaluations_master
 
-    SELECT scout_id
-		  ,position_id
-		  ,skill_id
-		  ,skill_code
-	      ,AVG(CAST(value AS NUMERIC(9,7))) AS value_mean 
-		  ,STDEVP(CAST(value AS NUMERIC(9,7)))  AS value_stdev
-	  INTO ##temp_values_scout_mean_and_sd
-      FROM ##temp_evaluations_master
-  GROUP BY scout_id
-		  ,position_id
-		  ,skill_id
-		  ,skill_code
+    SELECT *
+	  INTO ##temp_evaluations_master
+      FROM ##temp_evaluations_3_to_7
 
---SELECT * FROM ##temp_values_scout_avg_and_sd
+INSERT INTO ##temp_evaluations_master
+	SELECT *
+	  FROM ##temp_evaluations_overall
+
+/*
+SELECT m.*, pl.first_name, pl.last_name, u.first_name as scout_first, u.last_name as scout_last, nfl_entry_year
+FROM ##temp_evaluations_master m 
+inner join bane_production_analytics.dbo.players pl on m.player_id=pl.id
+inner join bane_production_analytics.dbo.users u on m.scout_id=u.id
+where nfl_entry_year<2016
+*/
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Turn each grade value into a z-score.
+Join in the scout grade adjustment factors to create the adjusted grades
 
 OUTPUT TABLES:
-##temp_values_with_z
+##temp_evaluations_adjusted
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
--- Check if ##temp_values_with_z exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_values_with_z') IS NOT NULL
-	DROP TABLE ##temp_values_with_z
+-- Check if ##temp_evaluations_adjusted exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_evaluations_adjusted') IS NOT NULL
+	DROP TABLE ##temp_evaluations_adjusted
 
-    SELECT ma.*
-	      ,value_mean 
-		  ,value_stdev		   
-		  ,(ma.value - value_mean) / NULLIF(value_stdev,0) AS value_z_score
-	  INTO ##temp_values_with_z
-      FROM ##temp_evaluations_master ma
-INNER JOIN ##temp_values_scout_mean_and_sd ms
-	    ON ma.scout_id = ms.scout_id
-	   AND ma.position_id = ms.position_id
-	   AND ma.skill_id = ms.skill_id
+    SELECT ev.*
+	      ,estimate
+	      ,CASE WHEN ev.scout_id = 2 THEN value ELSE value - estimate END AS value_adjusted --Scout ID 2 does not get a grade adjustment, it is the zero in the regression
+	  INTO ##temp_evaluations_adjusted
+      FROM ##temp_evaluations_master ev
+ LEFT JOIN [AnalyticsWork].[dbo].[scout_grade_adjustment_factors] sg
+        ON ev.scout_id = sg.scout_id
+	   AND ev.skill_id = sg.skill_id	
+	   AND ev.position_id = sg.position_id
 
---SELECT * FROM ##temp_values_with_z
+--SELECT * FROM ##temp_evaluations_adjusted
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Get the mean normalized grades for each player
+Find the mean adjusted grade for every player / skill.
 
 OUTPUT TABLES:
 ##temp_evaluations_player_means
@@ -131,22 +210,587 @@ IF OBJECT_ID('tempdb..##temp_evaluations_player_means') IS NOT NULL
 	DROP TABLE ##temp_evaluations_player_means
 
     SELECT player_id
-		  ,skill_id
+	      ,skill_id
 		  ,skill_code
-		  ,skill_type
-		  ,skill_name
-		  ,AVG(value_z_score) AS value_z_score_player_mean	      
+		  ,AVG(value_adjusted) AS value_adjusted_mean
 	  INTO ##temp_evaluations_player_means
-      FROM ##temp_values_with_z
+      FROM ##temp_evaluations_adjusted
   GROUP BY player_id
-  		  ,skill_id
+          ,skill_id
 		  ,skill_code
-		  ,skill_type
-		  ,skill_name
-  ORDER BY player_id
-  		  ,skill_id
-		  ,skill_code
-		  ,skill_type
-		  ,skill_name
 
 --SELECT * FROM ##temp_evaluations_player_means
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Pivot the player grades so you have one row per player with all 
+of his mean grades.  Then you can join this table to his eventual
+pro grades and model based off of that.
+
+OUTPUT TABLES:
+##temp_evaluations_player_pivot
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_evaluations_player_pivot exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_evaluations_player_pivot') IS NOT NULL
+	DROP TABLE ##temp_evaluations_player_pivot
+
+    SELECT player_id
+		  ,[CF-AA] AS cf_athletic_ability
+		  ,[CF-ACC] AS cf_accuracy
+		  ,[CF-ANG/APP] AS cf_angle_approach
+		  ,[CF-ARM/S] AS cf_arm_strength
+		  ,[CF-AWA] AS cf_mental_awareness
+		  ,[CF-CMP] AS cf_competitiveness
+		  ,[CF-CMP/LD] AS cf_competitiveness_leadership
+		  ,[CF-FLI/BALL] AS cf_flight_of_ball
+		  ,[CF-MOB] AS cf_mobility
+		  ,[CF-MTL/GAM] AS cf_mental_game_management
+		  ,[CF-PLYSPD] AS cf_playing_speed
+		  ,[CF-PRO] AS cf_production
+		  ,[CF-SIZ] AS cf_size
+		  ,[CF-STR/EXPL] AS cf_strength_explosion
+		  ,[PS-ACC] AS ps_accurracy
+		  ,[PS-APPR/LN] AS ps_approach_line
+		  ,[PS-BALLPROT] AS ps_ball_protection
+		  ,[PS-BLK/BLTZ] AS ps_blocking_blitz_pro
+		  ,[PS-BLOCK] AS ps_blocking
+		  ,[PS-BLTZ/PASS/RUSH] AS ps_blitz_pass_rush_ability
+		  ,[PS-BLTZ/PICK] AS ps_blitz_pickup_fbi
+		  ,[PS-BODY/A] AS ps_body_adjustment
+		  ,[PS-CLS/B] AS ps_close_on_the_ball
+		  ,[PS-COV] AS ps_coverage
+		  ,[PS-DEC/M] AS ps_decision_making
+		  ,[PS-DIR/K] AS ps_directional_kicker
+		  ,[PS-DRP/S] AS ps_drops_setup
+		  ,[PS-ELU] AS ps_elusiveness
+		  ,[PS-FOOT/S] AS ps_foot_speed
+		  ,[PS-HANDL/T] AS ps_handling_time
+		  ,[PS-HND/QK] AS ps_hand_quickness
+		  ,[PS-HNDS] AS ps_hands
+		  ,[PS-HNDS/BDYA] AS ps_hands_body_adjustment
+		  ,[PS-INSRUN] AS ps_inside_run
+		  ,[PS-KEY/D] AS ps_key_and_diagnose
+		  ,[PS-LAT/M] AS ps_lateral_movement
+		  ,[PS-MM/C] AS ps_m_m_cover
+		  ,[PS-OUTRUN] AS ps_outside_run
+		  ,[PS-PASS/BLK] AS ps_pass_blocking
+		  ,[PS-PASS/R] AS ps_pass_rush_ability
+		  ,[PS-PASS/RNG] AS ps_pass_ability_range
+		  ,[PS-PKT/A] AS ps_pocket_awareness
+		  ,[PS-PLANT/R] AS ps_plant_relationship
+		  ,[PS-PLY/M] AS ps_play_making
+		  ,[PS-POA/R] AS ps_poa_run
+		  ,[PS-PRES/MS] AS ps_pressure_kicks_mental_stability_no_k
+		  ,[PS-PRESS/K/MENT] AS ps_pressure_kicks_mental_stability_k
+		  ,[PS-PROD] AS ps_production
+		  ,[PS-PROD/A] AS ps_production_accuracy
+		  ,[PS-PULL] AS ps_pulling
+		  ,[PS-PUR] AS ps_pursuit
+		  ,[PS-RAC] AS ps_run_after_catch
+		  ,[PS-RB/S/FB] AS ps_run_blocking_sustain_fb_skills
+		  ,[PS-REL] AS ps_release_rel
+		  ,[PS-RISE] AS ps_rise
+		  ,[PS-RLS] AS ps_release_rls
+		  ,[PS-RNG/B] AS ps_range_ball_awareness
+		  ,[PS-ROU] AS ps_routes
+		  ,[PS-RUNS/T] AS ps_run_support_tackling
+		  ,[PS-SHD/B/HNDS] AS ps_shed_blockers_use_of_hands
+		  ,[PS-SHED/P/HND] AS ps_shed_poa_hand_quickness
+		  ,[PS-SIZ] AS ps_size
+		  ,[PS-SIZ/S] AS ps_size_strength
+		  ,[PS-SPD/HWS] AS ps_speed_hws_chart
+		  ,[PS-ST] AS ps_special_teams
+		  ,[PS-STAWY/KICKER] AS ps_straightaway_kicker
+		  ,[PS-STEP/P] AS ps_stepping_pattern
+		  ,[PS-STYLE] AS ps_style
+		  ,[PS-SUS/RUNB] AS ps_sustain_run_blocking
+		  ,[PS-TKL] AS ps_tackling
+		  ,[PS-TUFF/TKL] AS ps_toughness_tackling
+		  ,[PS-VEL] AS ps_velocity
+		  ,[PS-VIS] AS ps_vision_instincts
+		  ,[PS-ZNE/C] AS ps_zone_cover
+		  ,[C] AS sticd_character
+		  ,[D] AS sticd_durability
+		  ,[I] AS sticd_instincts
+		  ,[S] AS sticd_speed
+		  ,[T] AS sticd_toughness
+		  ,[GRADE] as grade_overall
+	  INTO ##temp_evaluations_player_pivot
+      FROM (
+    SELECT player_id
+		  ,skill_code
+		  ,value_adjusted_mean
+      FROM ##temp_evaluations_player_means WHERE skill_code IN ('CF-AA', 'CF-ACC', 'CF-ANG/APP', 'CF-ARM/S', 'CF-AWA', 'CF-CMP', 'CF-CMP/LD', 'CF-FLI/BALL', 'CF-MOB', 'CF-MTL/GAM', 'CF-PLYSPD', 'CF-PRO', 'CF-SIZ', 'CF-STR/EXPL', 'PS-ACC', 'PS-APPR/LN', 'PS-BALLPROT', 'PS-BLK/BLTZ', 'PS-BLOCK', 'PS-BLTZ/PASS/RUSH', 'PS-BLTZ/PICK', 'PS-BODY/A', 'PS-CLS/B', 'PS-COV', 'PS-DEC/M', 'PS-DIR/K', 'PS-DRP/S', 'PS-ELU', 'PS-FOOT/S', 'PS-HANDL/T', 'PS-HND/QK', 'PS-HNDS', 'PS-HNDS/BDYA', 'PS-INSRUN', 'PS-KEY/D', 'PS-LAT/M', 'PS-MM/C', 'PS-OUTRUN', 'PS-PASS/BLK', 'PS-PASS/R', 'PS-PASS/RNG', 'PS-PKT/A', 'PS-PLANT/R', 'PS-PLY/M', 'PS-POA/R', 'PS-PRES/MS', 'PS-PRESS/K/MENT', 'PS-PROD', 'PS-PROD/A', 'PS-PULL', 'PS-PUR', 'PS-RAC', 'PS-RB/S/FB', 'PS-REL', 'PS-RISE', 'PS-RLS', 'PS-RNG/B', 'PS-ROU', 'PS-RUNS/T', 'PS-SHD/B/HNDS', 'PS-SHED/P/HND', 'PS-SIZ', 'PS-SIZ/S', 'PS-SPD/HWS', 'PS-ST', 'PS-STAWY/KICKER', 'PS-STEP/P', 'PS-STYLE', 'PS-SUS/RUNB', 'PS-TKL', 'PS-TUFF/TKL', 'PS-VEL', 'PS-VIS', 'PS-ZNE/C', 'C', 'D', 'I', 'S', 'T', 'GRADE')) up
+     PIVOT (MAX(value_adjusted_mean) FOR skill_code IN ([CF-AA], [CF-ACC], [CF-ANG/APP], [CF-ARM/S], [CF-AWA], [CF-CMP], [CF-CMP/LD], [CF-FLI/BALL], [CF-MOB], [CF-MTL/GAM], [CF-PLYSPD], [CF-PRO], [CF-SIZ], [CF-STR/EXPL], [PS-ACC], [PS-APPR/LN], [PS-BALLPROT], [PS-BLK/BLTZ], [PS-BLOCK], [PS-BLTZ/PASS/RUSH], [PS-BLTZ/PICK], [PS-BODY/A], [PS-CLS/B], [PS-COV], [PS-DEC/M], [PS-DIR/K], [PS-DRP/S], [PS-ELU], [PS-FOOT/S], [PS-HANDL/T], [PS-HND/QK], [PS-HNDS], [PS-HNDS/BDYA], [PS-INSRUN], [PS-KEY/D], [PS-LAT/M], [PS-MM/C], [PS-OUTRUN], [PS-PASS/BLK], [PS-PASS/R], [PS-PASS/RNG], [PS-PKT/A], [PS-PLANT/R], [PS-PLY/M], [PS-POA/R], [PS-PRES/MS], [PS-PRESS/K/MENT], [PS-PROD], [PS-PROD/A], [PS-PULL], [PS-PUR], [PS-RAC], [PS-RB/S/FB], [PS-REL], [PS-RISE], [PS-RLS], [PS-RNG/B], [PS-ROU], [PS-RUNS/T], [PS-SHD/B/HNDS], [PS-SHED/P/HND], [PS-SIZ], [PS-SIZ/S], [PS-SPD/HWS], [PS-ST], [PS-STAWY/KICKER], [PS-STEP/P], [PS-STYLE], [PS-SUS/RUNB], [PS-TKL], [PS-TUFF/TKL], [PS-VEL], [PS-VIS], [PS-ZNE/C], [C], [D], [I], [S], [T], [GRADE])) AS pvt
+  ORDER BY player_id
+
+--SELECT * FROM ##temp_evaluations_player_pivot 
+
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Get down to one row of draft board position. Take a players draft
+board position from as late in the process as available.  This is 
+for bucketing for z scores for later on.
+
+OUTPUT TABLES:
+##temp_draft_board_positions_with_order
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_draft_board_positions exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_draft_board_positions') IS NOT NULL
+	DROP TABLE ##temp_draft_board_positions
+
+    SELECT player_id
+	      ,draft_year
+	      ,position
+		  ,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
+		        WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
+				WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
+				ELSE NULL
+		   END AS order_by
+	 INTO ##temp_draft_board_positions
+	 FROM [bane_production_analytics].[dbo].[draft_board_grades]
+	WHERE position != '' AND position IS NOT NULL
+
+
+-- Check if ##temp_draft_board_positions_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_draft_board_positions_with_order') IS NOT NULL
+	DROP TABLE ##temp_draft_board_positions_with_order
+
+    SELECT player_id
+	      ,draft_year
+	      ,position
+	      ,RANK() OVER (PARTITION BY player_id ORDER BY order_by) AS draft_board_position_order
+	 INTO ##temp_draft_board_positions_with_order
+	 FROM ##temp_draft_board_positions
+
+--SELECT * FROM ##temp_draft_board_positions_with_order
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Get a player season grade for each of a player's first
+four seasons.  If a player played in all four seasons, 
+he will have four records in the table.
+
+Tier system for season grades:
+1) Ability For Ravens / Quarterly
+2) Advance
+3) Grade Fit - model generated pro grade
+
+The first step is getting all the grades into a master grade table.
+
+The reason we join player information to both the scout and model
+tables separately is because the model table uses nfl_id while the
+scout table uses the Bane player_id.
+
+At some point, try to figure out a way to get rid of players who only
+have one 2.0 grade for his season.  You need to exclude 2.0s when 
+finding the average, but then if a player only has one, he is getting
+assigned a 50 for the season when you assign 50 to all nulls.
+
+OUTPUT TABLES:
+##temp_pro_grades_scout
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_pro_grades_scout exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_pro_grades_scout') IS NOT NULL
+	DROP TABLE ##temp_pro_grades_scout
+
+    SELECT re.id AS report_id
+	      ,author_id AS scout_id
+		  ,CASE WHEN MONTH(re.created_at) < 8 OR (MONTH(re.created_at) = 8 AND DAY(re.created_at) < 16) THEN YEAR(re.created_at)-1 
+		        ELSE YEAR(re.created_at) END AS report_season
+		  ,CASE WHEN MONTH(re.created_at) < 8 OR (MONTH(re.created_at) = 8 AND DAY(re.created_at) < 16) THEN (YEAR(re.created_at)-1) - nfl_entry_year + 1
+		        ELSE (YEAR(re.created_at)) - nfl_entry_year + 1 END AS player_season_in_league
+		  ,CASE WHEN UPPER(LTRIM(RTRIM(re.[type]))) IN ('ABILITY FOR RAVENS','QUARTERLY') THEN 1
+		        WHEN UPPER(LTRIM(RTRIM(re.[type]))) IN ('GAME ADVANCE') THEN 2
+				ELSE NULL
+		   END AS grade_tier
+		  ,player_id
+  		  ,nfl_id
+  		  ,nfl_gsis_id
+  		  ,ncaa_id
+  		  ,ncaa_gsis_id
+  		  ,last_name
+  		  ,first_name
+		  ,gr.value	AS grade
+		  ,CASE WHEN CAST(gr.value AS NUMERIC (3,1)) IN (8.0) THEN 100
+		        WHEN CAST(gr.value AS NUMERIC (3,1)) IN (7.0) THEN 84
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.9,6.7,6.5) THEN 73
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.3) THEN 65
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.1,6.0) THEN 58
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.9) THEN 53
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.8) THEN 50
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.7) THEN 47.5
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.6) THEN 45.5
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.4) THEN 44.5
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.2) THEN 43.5
+				WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.0) THEN 43
+				ELSE NULL
+		   END AS grade_scaled	
+	  INTO ##temp_pro_grades_scout
+      FROM [bane_production_analytics].[dbo].[reports] re
+ LEFT JOIN [bane_production_analytics].[dbo].[grades] gr
+        ON re.grade_id=gr.id	
+ LEFT JOIN [bane_production_analytics].[dbo].[players] pl
+        ON re.player_id=pl.id  
+	 WHERE 1=1
+	   AND UPPER(LTRIM(RTRIM(re.[type]))) IN ('ABILITY FOR RAVENS','GAME ADVANCE','QUARTERLY')
+	   AND CAST(gr.value AS NUMERIC (3,1)) != 2
+-------scale_id = 6 represents the Pro Grade Scale
+	   AND gr.scale_id = 6
+  ORDER BY re.id
+		  ,gr.id
+
+--SELECT * FROM ##temp_pro_grades_scout
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Next create a version of the Pro Grade Fit with the same
+structure so you can append those grades.
+
+OUTPUT TABLES:
+##temp_pro_grades_model
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if##temp_pro_grades_model exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_pro_grades_model') IS NOT NULL
+	DROP TABLE ##temp_pro_grades_model
+
+    SELECT ABS(CHECKSUM(NEWID()))*-1 AS report_id
+	      ,999 AS scout_id
+		  ,season AS report_season
+		  ,season - nfl_entry_year + 1 AS player_season_in_league
+	      ,3 AS grade_tier
+		  ,pl.id AS player_id
+		  ,PlayerID AS nfl_id	
+  		  ,nfl_gsis_id
+  		  ,ncaa_id
+  		  ,ncaa_gsis_id
+  		  ,last_name
+  		  ,first_name	  
+		  ,GradeFit AS grade
+		  ,ProGradeFit AS grade_scaled
+	  INTO ##temp_pro_grades_model
+      FROM [AnalyticsWork].[dbo].[model_pro_grades] mo
+ LEFT JOIN [bane_production_analytics].[dbo].[players] pl
+        ON mo.PlayerID=pl.nfl_id  
+
+--SELECT * FROM ##temp_pro_grades_model
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Append the model grades to the scout grades.
+
+OUTPUT TABLES:
+##temp_pro_grades_append
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_pro_grades_append exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_pro_grades_append') IS NOT NULL
+	DROP TABLE ##temp_pro_grades_append
+
+    SELECT *
+	  INTO ##temp_pro_grades_append
+      FROM ##temp_pro_grades_model
+
+INSERT INTO ##temp_pro_grades_append
+	SELECT *
+	  FROM ##temp_pro_grades_scout
+
+--SELECT * FROM ##temp_pro_grades_append
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Find the player's mean grade for each grade_tier in each season.
+
+Once we are able to put a team on each player's report, try to exclude
+grades that are based just on training camp, like:
+Report Month in (7,8)
+AND team=BLT OR (team=SF AND Report Year = 2014) OR (team=PHI AND Report Year = 2015)
+
+
+OUTPUT TABLES:
+##temp_pro_grades_season_tier_mean
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if##temp_pro_grades_season_tier_mean exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_pro_grades_season_tier_mean') IS NOT NULL
+	DROP TABLE ##temp_pro_grades_season_tier_mean
+
+    SELECT player_id
+  		  ,nfl_id
+  		  ,nfl_gsis_id
+  		  ,ncaa_id
+  		  ,ncaa_gsis_id
+  		  ,last_name
+  		  ,first_name
+	      ,report_season
+		  ,player_season_in_league
+		  ,grade_tier
+		  ,RANK() OVER (PARTITION BY player_id, report_season ORDER BY grade_tier) AS order_for_models
+  		  ,AVG(CAST(grade_scaled AS FLOAT)) AS grade_scaled_mean
+	  INTO ##temp_pro_grades_season_tier_mean
+	  FROM ##temp_pro_grades_append
+  GROUP BY player_id
+  		  ,nfl_id
+  		  ,nfl_gsis_id
+  		  ,ncaa_id
+  		  ,ncaa_gsis_id
+  		  ,last_name
+  		  ,first_name
+	      ,report_season
+		  ,player_season_in_league
+		  ,grade_tier
+
+--SELECT * FROM ##temp_pro_grades_season_tier_mean
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Select the highest tiered grade for every player for every season.
+
+OUTPUT TABLES:
+##temp_pro_grades_season
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_pro_grades_season exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_pro_grades_season') IS NOT NULL
+	DROP TABLE ##temp_pro_grades_season
+
+    SELECT *
+	  INTO ##temp_pro_grades_season
+	  FROM ##temp_pro_grades_season_tier_mean
+	 WHERE order_for_models = 1
+
+--SELECT * FROM ##temp_pro_grades_season
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Join the season pro grades to the pivoted player grades.
+
+Since we only modeled Pro Grades back to 2009, limit your pool to only 2006 Draft and
+Beyond (because those guys will have at least one grade, from their 4th season).
+
+OUTPUT TABLES:
+##temp_evaluations_with_pro_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_evaluations_with_pro_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_evaluations_with_pro_grades') IS NOT NULL
+	DROP TABLE ##temp_evaluations_with_pro_grades
+
+    SELECT me.*
+	      ,report_season
+		  ,player_season_in_league
+		  ,CASE WHEN player_season_in_league = 2 THEN 1 ELSE 0 END AS player_season_second
+		  ,CASE WHEN player_season_in_league = 3 THEN 1 ELSE 0 END AS player_season_third
+		  ,CASE WHEN player_season_in_league = 4 THEN 1 ELSE 0 END AS player_season_fourth
+		  ,grade_tier
+		  ,CASE WHEN COALESCE(grade_scaled_mean,50) < 50 THEN 50
+		        ELSE COALESCE(grade_scaled_mean,50)
+		   END AS grade_scaled
+		  ,CASE WHEN dbg.position != '' AND dbg.position IS NOT NULL THEN CASE WHEN dbg.position IN ('OB','RUSH','SAM','DP') THEN 'OB'
+																	           WHEN dbg.position IN ('DS','FS','SS') THEN 'DS'
+																			   ELSE UPPER(LTRIM(RTRIM(dbg.position)))
+																		  END
+		        ELSE CASE WHEN pos.abbreviation IN ('WR') THEN 'WO'
+				          WHEN pos.abbreviation IN ('RB') THEN 'OH'
+						  WHEN pos.abbreviation IN ('ROG','LOG','OL') THEN 'OG'
+						  WHEN pos.abbreviation IN ('ROT','LOT') THEN 'OT'
+						  WHEN pos.abbreviation IN ('MB','ILB','WB','LB','4-3 WILL') THEN 'IB'
+						  WHEN pos.abbreviation IN ('ROLB','LOLB','OLB','SB','RUSH','4-3 DE','4-3 SAM','SAM') THEN 'OB'
+						  WHEN pos.abbreviation IN ('NB','DB') THEN 'DC'
+						  WHEN pos.abbreviation IN ('RDE','LDE') THEN 'DE'
+						  WHEN pos.abbreviation IN ('NT','DL','NG') THEN 'DT'
+						  WHEN pos.abbreviation IN ('SS','FS') THEN 'DS'
+						  ELSE UPPER(LTRIM(RTRIM(pos.abbreviation)))
+					 END
+		   END AS position_draft_board
+	  INTO ##temp_evaluations_with_pro_grades
+	  FROM ##temp_evaluations_player_pivot me
+ LEFT JOIN ##temp_pro_grades_season pg
+        ON pg.player_id = me.player_id
+INNER JOIN [bane_production_analytics].[dbo].[players] pl
+        ON me.player_id = pl.id
+ LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
+        ON pl.position_id = pos.id
+ LEFT JOIN ##temp_draft_board_positions_with_order dbg
+        ON me.player_id = dbg.player_id
+		AND dbg.draft_board_position_order = 1
+	 WHERE coalesce(dbg.draft_year,nfl_entry_year,pl.draft_year) >= 2006 and coalesce(dbg.draft_year,nfl_entry_year,pl.draft_year) <2016
+	   AND ((player_season_in_league <=4
+	   AND player_season_in_league !=0)
+	    OR player_season_in_league IS NULL)
+
+--SELECT * FROM ##temp_evaluations_with_pro_grades
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+select distinct m.player_id
+      ,p1.nfl_entry_year as first_season
+	  ,p2.nfl_entry_year+1 as second_season
+	  ,p3.nfl_entry_year+2 as third_season
+	  ,p4.nfl_entry_year+3 as fourth_season
+into ##temp_seasons
+from ##temp_evaluations_with_pro_grades m
+inner join [bane_production_analytics].[dbo].[players] p1
+on m.player_id=p1.id
+inner join [bane_production_analytics].[dbo].[players] p2
+on p1.id=p2.id
+inner join [bane_production_analytics].[dbo].[players] p3
+on p1.id=p3.id
+inner join [bane_production_analytics].[dbo].[players] p4
+on p1.id=p4.id
+order by m.player_id
+
+--select * from ##temp_seasons where player_id=10828
+
+
+	SELECT player_id
+		  ,me.season
+	  into ##temp_seasons_unpivot
+      FROM ##temp_seasons
+   UNPIVOT (season FOR code IN (first_season, second_season, third_season, fourth_season
+							   )) AS me
+
+select * from ##temp_seasons_unpivot where player_id=10828
+
+select distinct u.player_id
+,cf_athletic_ability
+,cf_accuracy
+,cf_angle_approach
+,cf_arm_strength
+,cf_mental_awareness
+,cf_competitiveness
+,cf_competitiveness_leadership
+,cf_flight_of_ball
+,cf_mobility
+,cf_mental_game_management
+,cf_playing_speed
+,cf_production
+,cf_size
+,cf_strength_explosion
+,ps_accurracy
+,ps_approach_line
+,ps_ball_protection
+,ps_blocking_blitz_pro
+,ps_blocking
+,ps_blitz_pass_rush_ability
+,ps_blitz_pickup_fbi
+,ps_body_adjustment
+,ps_close_on_the_ball
+,ps_coverage
+,ps_decision_making
+,ps_directional_kicker
+,ps_drops_setup
+,ps_elusiveness
+,ps_foot_speed
+,ps_handling_time
+,ps_hand_quickness
+,ps_hands
+,ps_hands_body_adjustment
+,ps_inside_run
+,ps_key_and_diagnose
+,ps_lateral_movement
+,ps_m_m_cover
+,ps_outside_run
+,ps_pass_blocking
+,ps_pass_rush_ability
+,ps_pass_ability_range
+,ps_pocket_awareness
+,ps_plant_relationship
+,ps_play_making
+,ps_poa_run
+,ps_pressure_kicks_mental_stability_no_k
+,ps_pressure_kicks_mental_stability_k
+,ps_production
+,ps_production_accuracy
+,ps_pulling
+,ps_pursuit
+,ps_run_after_catch
+,ps_run_blocking_sustain_fb_skills
+,ps_release_rel
+,ps_rise
+,ps_release_rls
+,ps_range_ball_awareness
+,ps_routes
+,ps_run_support_tackling
+,ps_shed_blockers_use_of_hands
+,ps_shed_poa_hand_quickness
+,ps_size
+,ps_size_strength
+,ps_speed_hws_chart
+,ps_special_teams
+,ps_straightaway_kicker
+,ps_stepping_pattern
+,ps_style
+,ps_sustain_run_blocking
+,ps_tackling
+,ps_toughness_tackling
+,ps_velocity
+,ps_vision_instincts
+,ps_zone_cover
+,sticd_character
+,sticd_durability
+,sticd_instincts
+,sticd_speed
+,sticd_toughness
+,grade_overall
+,position_draft_board
+,u.season
+into ##temp_list
+from ##temp_seasons_unpivot u
+left join ##temp_evaluations_with_pro_grades m
+on u.player_id=m.player_id
+where u.season<=2015
+
+--select * from ##temp_list
+
+
+select l.*
+,player_season_in_league
+,player_season_second
+,player_season_third
+,player_season_fourth
+,coalesce(cast(grade_scaled as float),50) as grade_scaled
+--into ##temp_all
+from ##temp_list l
+left join ##temp_evaluations_with_pro_grades m
+on m.player_id=l.player_id
+and m.report_season=l.season
+
+select Player_id, count(player_id) as pcount into ##temp_check from ##temp_all a 
+group by player_id
+
+select c.*, nfl_entry_year from ##temp_check c inner join [bane_production_analytics].[dbo].[players] p1
+on c.player_id=p1.id order by pcount desc
+
+select * from [bane_production_analytics].[dbo].[players] p1 where last_name='Kindle' and first_name='Sergio'
