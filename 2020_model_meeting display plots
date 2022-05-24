@@ -1,0 +1,733 @@
+
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for updating the draft model grades table for players. It adds to the existing table
+when you have a new draft model year, version, or type.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(1)
+
+
+Create a table with all the scout grades and positions.
+
+OUTPUT TABLES:
+#temp_evaluations_overall
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_evaluations_overall exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_evaluations_overall') IS NOT NULL
+	DROP TABLE #temp_evaluations_overall
+
+	SELECT re.id AS report_id
+		,author_id AS scout_id
+		,player_id AS bane_player_id
+		,re.created_at AS report_date
+		,re.[type] AS report_type
+		,RANK() OVER (PARTITION BY player_id, author_id ORDER BY re.created_at DESC) AS report_order
+		,CASE WHEN re.position_id IS NULL THEN 'NONE' ELSE CASE WHEN po.abbreviation = 'DE43' THEN 'OB'
+		-- WHEN po.translation = 'DT' THEN 'DE' 
+		ELSE translation END END AS position
+		,CASE WHEN CAST(gr.value AS NUMERIC (3,1)) IN (8.0) THEN 100
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (7.0) THEN 92
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.9) THEN 82
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.7,6.5) THEN 71
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.4,6.3,6.2) THEN 64
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.1,6.0) THEN 58
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.9) THEN 53.5
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.8) THEN 50
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.7) THEN 47
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.6) THEN 45.5
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.4) THEN 43
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.2) THEN 41
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.0) THEN 40
+			ELSE NULL
+		END AS grade_value
+		,CAST(gr.value AS NUMERIC (3,1)) AS grade_bucket    
+	INTO #temp_evaluations_overall
+	FROM [BaneProductionAnalytics].[dbo].[reports] re
+	INNER JOIN [BaneProductionAnalytics].[dbo].[taggings] t 
+		ON t.taggable_id = re.id 
+		AND UPPER(t.taggable_type) = 'REPORT'
+		AND t.tag_id = 11 --(it is a college report)
+	INNER JOIN [BaneProductionAnalytics].[dbo].[players] pl 
+		ON re.player_id = pl.id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[grades] gr
+		ON re.grade_id=gr.id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[users] us
+		ON re.author_id=us.id    
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[positions] po
+		ON re.position_id = po.id           
+	WHERE 1=1
+		AND re.is_deleted = 0
+		AND UPPER(us.[type]) NOT LIKE '%COACH%'  
+		AND UPPER(re.[type]) <> 'SPECIAL TEAMS' 
+		AND translation NOT IN ('ST','PK','PT','LS')
+		AND gr.scale_id IN (4,6) --(it is an overall grade)
+		AND re.[type] IN ('fall','spring','all star game','cross-check')
+		AND (MONTH(re.created_at) IN (6,7,8,9,10,11,12,1) OR (MONTH(re.created_at) = 2 AND DAY(re.created_at) < 16))
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(2)
+
+
+Find the position each player is graded at most (use this for the current draft class since you don't have a board grade).
+
+OUTPUT TABLES:
+#temp_position_graded_as
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_position_counts exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_position_counts') IS NOT NULL
+	DROP TABLE #temp_position_counts
+
+	SELECT bane_player_id
+		,position
+		,COUNT(*) AS report_count
+	INTO #temp_position_counts
+	FROM #temp_evaluations_overall
+	GROUP BY bane_player_id
+		,position
+
+-- Check if #temp_position_graded_as exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_position_graded_as') IS NOT NULL
+	DROP TABLE #temp_position_graded_as
+
+	SELECT bane_player_id
+		,position
+		,report_count
+		,RANK() OVER (PARTITION BY bane_player_id ORDER BY report_count DESC, position) AS position_order
+	INTO #temp_position_graded_as
+	FROM #temp_position_counts
+	
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(3)
+
+
+Get down to one row of draft board position. Take a players draft
+board position from as late in the process as available. 
+
+OUTPUT TABLES:
+#temp_draft_boards_with_order
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_draft_boards exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_boards') IS NOT NULL
+	DROP TABLE #temp_draft_boards
+
+	SELECT player_id AS bane_player_id
+		,db.id
+		,CASE WHEN position_translation IN ('RUSH','SAM') THEN 'OB'
+			WHEN position_translation IN ('FS','SS') THEN 'DS'
+			WHEN position_translation IN ('RB','OH') THEN 'RB'
+			WHEN position_translation IN ('WR','WO') THEN 'WR'
+			--WHEN position_translation IN ('DT','DE') THEN 'DE'
+			ELSE position_translation
+		END AS position
+		,gr.[value] AS grade_bucket
+		,position_rank
+		,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-DEC' THEN 4
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DEC' THEN 5
+			ELSE NULL
+		END AS order_by		
+	INTO #temp_draft_boards
+	FROM [BaneProductionAnalytics].[dbo].[draft_board_grades] db
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[grades] gr
+		ON db.grade_id = gr.id
+	WHERE UPPER(LTRIM(RTRIM([type]))) IN ('POST-FEB','POST-DEC','PRE-DEC')
+		AND position != ''
+		AND position IS NOT NULL
+		AND position_translation NOT IN ('RS','ST')
+		AND draft_year >= 2012
+
+
+-- Check if #temp_draft_boards_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_boards_with_order') IS NOT NULL
+	DROP TABLE #temp_draft_boards_with_order
+
+	SELECT bane_player_id
+		,position
+		,grade_bucket
+		,RANK() OVER (PARTITION BY bane_player_id ORDER BY order_by, position_rank, id) AS draft_board_position_order
+	INTO #temp_draft_boards_with_order
+	FROM #temp_draft_boards
+
+
+-- Check if #temp_draft_boards_latest exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_boards_latest') IS NOT NULL
+	DROP TABLE #temp_draft_boards_latest
+
+	SELECT *
+	INTO #temp_draft_boards_latest
+	FROM #temp_draft_boards_with_order
+	WHERE draft_board_position_order = 1
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(5)
+
+
+Join the player info to the model scores table.
+
+OUTPUT TABLES:
+#temp_pre_combine_final_scores_percentile
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_pre_combine_final_scores exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_final_scores') IS NOT NULL
+	DROP TABLE #temp_pre_combine_final_scores
+
+	SELECT fs.bane_player_id
+		,average_prediction
+		,ISNULL(db.position,po.position) AS position
+		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS average_prediction_rank
+	INTO #temp_pre_combine_final_scores
+	FROM AnalyticsWork.dbo.pre_combine_final_scores_retrain_rf fs
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON fs.bane_player_id = pl.id 
+		AND pl.is_deleted = 0
+	LEFT JOIN #temp_draft_boards_latest db
+		ON fs.bane_player_id = db.bane_player_id
+	LEFT JOIN #temp_position_graded_as po
+		ON fs.bane_player_id = po.bane_player_id
+		AND po.position_order = 1
+	WHERE draft_year >= 2016
+
+-- Check if #temp_pre_combine_final_scores_pos_counts exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_final_scores_pos_counts') IS NOT NULL
+	DROP TABLE #temp_pre_combine_final_scores_pos_counts
+		
+	SELECT position
+		,COUNT(*) AS position_count
+	INTO #temp_pre_combine_final_scores_pos_counts
+	FROM #temp_pre_combine_final_scores
+	GROUP BY position
+
+
+-- Check if #temp_pre_combine_final_scores_percentile exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_final_scores_percentile') IS NOT NULL
+	DROP TABLE #temp_pre_combine_final_scores_percentile
+
+	SELECT fs.*
+		,(position_count - average_prediction_rank) / CAST(position_count AS FLOAT) as average_prediction_percentile
+	INTO #temp_pre_combine_final_scores_percentile
+	FROM #temp_pre_combine_final_scores fs
+	INNER JOIN #temp_pre_combine_final_scores_pos_counts po
+		ON fs.position = po.position
+	
+	
+	
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(5)
+
+
+Find the grades only percentile.
+
+OUTPUT TABLES:
+#temp_pre_combine_grades_percentile
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_pre_combine_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_grades') IS NOT NULL
+	DROP TABLE #temp_pre_combine_grades
+
+	SELECT fs.bane_player_id
+		,average_prediction AS component_grades_prediction
+		,ISNULL(db.position,po.position) AS position
+		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS average_prediction_rank
+	INTO #temp_pre_combine_grades
+	FROM [AnalyticsWork].[dbo].pre_combine_component_scores fs
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON fs.bane_player_id = pl.id 
+		AND pl.is_deleted = 0
+	LEFT JOIN #temp_draft_boards_latest db
+		ON fs.bane_player_id = db.bane_player_id
+	LEFT JOIN #temp_position_graded_as po
+		ON fs.bane_player_id = po.bane_player_id
+		AND po.position_order = 1
+	WHERE draft_year >= 2016
+
+
+-- Check if #temp_pre_combine_grades_pos_counts exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_grades_pos_counts') IS NOT NULL
+	DROP TABLE #temp_pre_combine_grades_pos_counts
+		
+	SELECT position
+		,COUNT(*) AS position_count
+	INTO #temp_pre_combine_grades_pos_counts
+	FROM #temp_pre_combine_grades
+	GROUP BY position
+
+
+-- Check if #temp_pre_combine_grades_percentile exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_grades_percentile') IS NOT NULL
+	DROP TABLE #temp_pre_combine_grades_percentile
+
+	SELECT fs.*
+		,(position_count - average_prediction_rank) / CAST(position_count AS FLOAT) as component_grades_percentile
+	INTO #temp_pre_combine_grades_percentile
+	FROM #temp_pre_combine_grades fs
+	INNER JOIN #temp_pre_combine_grades_pos_counts po
+		ON fs.position = po.position
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(5aa)
+
+
+Find the production only percentile.
+
+OUTPUT TABLES:
+#temp_pre_combine_production_percentile
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_pre_combine_production exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_production') IS NOT NULL
+	DROP TABLE #temp_pre_combine_production
+
+	SELECT fs.bane_player_id
+		,average_prediction AS production_prediction
+		,ISNULL(db.position,po.position) AS position
+		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS average_prediction_rank
+	INTO #temp_pre_combine_production
+	FROM [AnalyticsWork].[dbo].pre_combine_production_scores fs
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON fs.bane_player_id = pl.id 
+		AND pl.is_deleted = 0
+	LEFT JOIN #temp_draft_boards_latest db
+		ON fs.bane_player_id = db.bane_player_id
+	LEFT JOIN #temp_position_graded_as po
+		ON fs.bane_player_id = po.bane_player_id
+		AND po.position_order = 1
+	WHERE draft_year >= 2016
+
+
+-- Check if #temp_pre_combine_production_pos_counts exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_production_pos_counts') IS NOT NULL
+	DROP TABLE #temp_pre_combine_production_pos_counts
+		
+	SELECT position
+		,COUNT(*) AS position_count
+	INTO #temp_pre_combine_production_pos_counts
+	FROM #temp_pre_combine_production
+	GROUP BY position
+
+
+-- Check if #temp_pre_combine_production_percentile exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_production_percentile') IS NOT NULL
+	DROP TABLE #temp_pre_combine_production_percentile
+
+	SELECT fs.*
+		,(position_count - average_prediction_rank) / CAST(position_count AS FLOAT) as production_percentile
+	INTO #temp_pre_combine_production_percentile
+	FROM #temp_pre_combine_production fs
+	INNER JOIN #temp_pre_combine_production_pos_counts po
+		ON fs.position = po.position
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(5bb)
+
+
+Find the no grade percentile.
+
+OUTPUT TABLES:
+#temp_pre_combine_no_grade_percentile
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_pre_combine_no_grade exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_no_grade') IS NOT NULL
+	DROP TABLE #temp_pre_combine_no_grade
+
+	SELECT fs.bane_player_id
+		,average_prediction AS no_grade_prediction
+		,ISNULL(db.position,po.position) AS position
+		,RANK() OVER (PARTITION BY ISNULL(db.position,po.position) ORDER BY average_prediction DESC) AS average_prediction_rank
+	INTO #temp_pre_combine_no_grade
+	FROM [AnalyticsWork].[dbo].pre_combine_no_scout_grade_scores fs
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON fs.bane_player_id = pl.id 
+		AND pl.is_deleted = 0
+	LEFT JOIN #temp_draft_boards_latest db
+		ON fs.bane_player_id = db.bane_player_id
+	LEFT JOIN #temp_position_graded_as po
+		ON fs.bane_player_id = po.bane_player_id
+		AND po.position_order = 1
+	WHERE draft_year >= 2016
+
+
+-- Check if #temp_pre_combine_no_grade_pos_counts exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_no_grade_pos_counts') IS NOT NULL
+	DROP TABLE #temp_pre_combine_no_grade_pos_counts
+		
+	SELECT position
+		,COUNT(*) AS position_count
+	INTO #temp_pre_combine_no_grade_pos_counts
+	FROM #temp_pre_combine_no_grade
+	GROUP BY position
+
+
+-- Check if #temp_pre_combine_no_grade_percentile exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pre_combine_no_grade_percentile') IS NOT NULL
+	DROP TABLE #temp_pre_combine_no_grade_percentile
+
+	SELECT fs.*
+		,(position_count - average_prediction_rank) / CAST(position_count AS FLOAT) as no_grade_percentile
+	INTO #temp_pre_combine_no_grade_percentile
+	FROM #temp_pre_combine_no_grade fs
+	INNER JOIN #temp_pre_combine_no_grade_pos_counts po
+		ON fs.position = po.position
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(xx)
+
+
+Join all the percentiles together for the charts.
+
+OUTPUT TABLES:
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+	SELECT PL.id
+		,CONCAT(pl.last_name,', ',pl.goes_by) as player
+		,draft_year
+		,fs.position
+		,sc.code AS school
+		,gg.[value] AS model_grade
+		,average_prediction_percentile*100 AS percentile_overall
+		,gr.component_grades_percentile*100 AS percentile_grades
+		,ng.no_grade_percentile*100 AS percentile_no_grades
+		,pp.production_percentile*100 AS percentile_production
+	FROM #temp_pre_combine_final_scores_percentile fs
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON fs.bane_player_id = pl.id
+		AND pl.is_deleted = 0
+	INNER JOIN BaneProductionAnalytics.dbo.schools sc
+		ON pl.ncaa_club_id = sc.id
+	LEFT JOIN #temp_pre_combine_grades_percentile gr
+		ON fs.bane_player_id = gr.bane_player_id
+	LEFT JOIN #temp_pre_combine_production_percentile pp
+		ON fs.bane_player_id = pp.bane_player_id
+	LEFT JOIN #temp_pre_combine_no_grade_percentile ng
+		ON fs.bane_player_id = ng.bane_player_id
+	LEFT JOIN Analytics.dbo.analysis_players_draft_model_grades mg
+		ON fs.bane_player_id = mg.bane_player_id
+		AND mg.draft_model_year = 2020
+	LEFT JOIN BaneProductionAnalytics.dbo.grades gg
+		ON mg.model_without_board_grade_id = gg.id
+	WHERE 1 = 1
+		AND fs.position in ('fB') 
+		and draft_year = 2020
+	ORDER BY average_prediction_percentile DESC,CONCAT(pl.last_name,', ',pl.goes_by) 
+
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 24
+	where  draft_model_year = 2020
+		and bane_player_id   in (260876,261677)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 25
+	where  draft_model_year = 2020
+		and bane_player_id   in (258556)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 148
+	where  draft_model_year = 2020
+		and bane_player_id   in (87008)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 26
+	where  draft_model_year = 2020
+		and bane_player_id   in (258204)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (233814,260979)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 27
+	where  draft_model_year = 2020
+		and bane_player_id   in (286650)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 29
+	where  draft_model_year = 2020
+		and bane_player_id   in (258685,87337,261177,232729)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 30
+	where  draft_model_year = 2020
+		and bane_player_id   in (233952
+,258829
+,257323
+,231454
+,261653
+,232314
+,232101
+,215817
+,232157
+,88858
+,232246
+,87138
+,286478
+,234354
+,231254
+,233786
+,259808
+,232954
+,234194
+,281969
+,217618
+,232915
+,231464
+,90243)
+
+/*	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (233835,233158,234834)
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 27
+	where  draft_model_year = 2020
+		and bane_player_id   in (231406,258901)
+
+*/
+
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 26
+	where  draft_model_year = 2020
+		and bane_player_id   in (258460)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (233352)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 27
+	where  draft_model_year = 2020
+		and bane_player_id   in (233092)
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 29
+	where  draft_model_year = 2020
+		and bane_player_id   in (233788
+,285660
+,260934
+,258280
+,232828
+,231908
+,85967
+,232129)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 30
+	where  draft_model_year = 2020
+		and bane_player_id   in (232889
+,282032
+,232146
+,233849)
+
+
+
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (261240,258744)
+
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 148
+	where  draft_model_year = 2020
+		and bane_player_id   in (231976,260880,258464)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 26
+	where  draft_model_year = 2020
+		and bane_player_id   in (231576)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (260692)
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 29
+	where  draft_model_year = 2020
+		and bane_player_id   in (236122,231939,232262,248019)
+
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 24
+	where  draft_model_year = 2020
+		and bane_player_id   in (260876,261677)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 25
+	where  draft_model_year = 2020
+		and bane_player_id   in (258556)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 148
+	where  draft_model_year = 2020
+		and bane_player_id   in (87008)
+
+
+
+
+	SELECT CONCAT(cp.last_name,', ',cp.goes_by) AS comp
+		,similarity_score
+		,similarity_score_rank
+	FROM Analytics.dbo.analysis_players_draft_model_similarity_scores ss
+	INNER JOIN BaneProductionAnalytics.dbo.players tp
+		ON ss.target_bane_player_id = tp.id
+		AND tp.is_deleted = 0
+	INNER JOIN BaneProductionAnalytics.dbo.players cp
+		ON ss.comp_bane_player_id = cp.id
+		AND cp.is_deleted = 0
+	WHERE CONCAT(tp.last_name,', ',tp.goes_by) = 'Davis, Ashtyn'
+	ORDER BY similarity_score_rank
+
+
+
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 25
+	where  draft_model_year = 2020
+		and bane_player_id   in (258281)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 148
+	where  draft_model_year = 2020
+		and bane_player_id   in (261359)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (234736,258399)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 27
+	where  draft_model_year = 2020
+		and bane_player_id   in (281978)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (231584,260934)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 29
+	where  draft_model_year = 2020
+		and bane_player_id   in (85967,285660)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 27
+	where  draft_model_year = 2020
+		and bane_player_id   in (232810,285385)
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (232835)
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 29
+	where  draft_model_year = 2020
+		and bane_player_id   in (234550,232109,285377,335601)
+
+
+
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 25
+	where  draft_model_year = 2020
+		and bane_player_id   in (232911,261288)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 26
+	where  draft_model_year = 2020
+		and bane_player_id   in (231069,236217)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (230964,258269)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 148
+	where  draft_model_year = 2020
+		and bane_player_id   in (232031)
+		
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 25
+	where  draft_model_year = 2020
+		and bane_player_id   in (261093,259111,231825)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 148
+	where  draft_model_year = 2020
+		and bane_player_id   in (231547)
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 26
+	where  draft_model_year = 2020
+		and bane_player_id   in (261359)
+
+
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 147
+	where  draft_model_year = 2020
+		and bane_player_id   in (258853,258399)
+		
+	update Analytics.dbo.analysis_players_draft_model_grades
+	set model_without_board_grade_id = 24
+	where  draft_model_year = 2020
+		and bane_player_id   in (258281,260863)
+	
+	select *
+	from BaneProductionAnalytics.dbo.grades
+	where scale_id = 4
