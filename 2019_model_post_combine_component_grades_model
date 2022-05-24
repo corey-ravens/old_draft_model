@@ -17,7 +17,7 @@ And other scouts (Andrew) who tend to view the lower players to have lower avera
 
 v2 adds in the grade flags
 v3 is for 2018 draft, it adds injured players salaries and updates the component skills, ids, etc.
-
+v4 changes min to the "blended" max
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -85,6 +85,8 @@ IF OBJECT_ID('tempdb..#temp_draft_board_positions') IS NOT NULL
 		,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
 			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
 			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-DEC' THEN 4
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DEC' THEN 5
 			ELSE NULL
 	END AS order_by
 	INTO #temp_draft_board_positions
@@ -161,7 +163,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations') IS NOT NULL
 			WHEN skill_id IN (1533,1409) THEN 1533
 			WHEN skill_id IN (1534,1410) THEN 1534
 			WHEN skill_id IN (1535,1416) THEN 1535
-			WHEN skill_id IN (1415) AND po.translation IN ('OB','IB') THEN 1535
+			WHEN skill_id IN (1415,1537,1411) AND po.translation IN ('OB','IB') THEN 1535
 			WHEN skill_id IN (1415) AND po.translation IS NULL THEN NULL
 			WHEN skill_id IN (1415,1538) THEN 1538
 			WHEN skill_id IN (1537,1411) THEN 1537
@@ -235,7 +237,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_3_to_7') IS NOT NULL
 		ON re.position_id = po.id
      WHERE 1=1
        AND re.is_deleted = 0
-	   --AND UPPER(us.[type]) NOT LIKE '%COACH%'  
+	   AND UPPER(us.[type]) NOT LIKE '%COACH%'  
 	   AND UPPER(re.[type]) <> 'SPECIAL TEAMS' 
 	   AND translation NOT IN ('ST','PK','PT','LS')
        AND gr.scale_id = 5 --(it is a 3-7 component grade)
@@ -295,7 +297,7 @@ IF OBJECT_ID('tempdb..#temp_evaluations_overall') IS NOT NULL
 		ON re.position_id = po.id           
 	WHERE 1=1
 		AND re.is_deleted = 0
-		--AND UPPER(us.[type]) NOT LIKE '%COACH%'  
+		AND UPPER(us.[type]) NOT LIKE '%COACH%'  
 		AND UPPER(re.[type]) <> 'SPECIAL TEAMS' 
 		AND translation NOT IN ('ST','PK','PT','LS')
 		AND gr.scale_id IN (4,6) --(it is an overall grade)
@@ -555,6 +557,8 @@ IF OBJECT_ID('tempdb..#temp_evaluations_player_means') IS NOT NULL
 		,MAX(value_z_score) AS value_z_score_max
 		,AVG(value_z_score) AS value_z_score_mean
 		,MIN(value_z_score) AS value_z_score_min
+		,STDEVP(value_z_score) AS value_z_score_stdev
+		,VAR(value_z_score) AS value_z_score_variance
 	INTO #temp_evaluations_player_means
 	FROM #temp_evaluations_adjusted
 	GROUP BY bane_player_id
@@ -898,8 +902,8 @@ Analytics.dbo.r_input_draft_model_post_combine_grades
 DECLARE @current_season INT
 SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
 
-DELETE FROM Analytics.dbo.r_input_draft_model_post_combine_grades
-WHERE created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_post_combine_grades WHERE draft_model_year = 2018)
+--DELETE FROM Analytics.dbo.r_input_draft_model_post_combine_grades
+--WHERE created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_post_combine_grades WHERE draft_model_year = 2018)
 
 INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades
 	SELECT ep_mean.bane_player_id
@@ -926,148 +930,148 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades
 		,grade_overall_min
 		,cf_athletic_ability_max
 		,cf_athletic_ability_mean
-		,cf_athletic_ability_min
+		,cf_athletic_ability_max * 0.75 + cf_athletic_ability_mean * 0.25 AS cf_athletic_ability_min
 		,cf_competitiveness_max
 		,cf_competitiveness_mean
-		,cf_competitiveness_min
+		,cf_competitiveness_max * 0.75 + cf_competitiveness_mean * 0.25 AS cf_competitiveness_min
 		,cf_playing_speed_max
 		,cf_playing_speed_mean
-		,cf_playing_speed_min
+		,cf_playing_speed_max * 0.75 + cf_playing_speed_mean * 0.25 AS cf_playing_speed_min
 		,cf_production_max
 		,cf_production_mean
-		,cf_production_min
+		,cf_production_max * 0.75 + cf_production_mean * 0.25 AS cf_production_min
 		,cf_size_max
 		,cf_size_mean
-		,cf_size_min
+		,cf_size_max * 0.75 + cf_size_mean * 0.25 AS cf_size_min
 		,cf_special_teams_max
 		,cf_special_teams_mean
-		,cf_special_teams_min
+		,cf_special_teams_max * 0.75 + cf_special_teams_mean * 0.25 AS cf_special_teams_min
 		,cf_strength_explosion_max
 		,cf_strength_explosion_mean
-		,cf_strength_explosion_min
+		,cf_strength_explosion_max * 0.75 + cf_strength_explosion_mean * 0.25 AS cf_strength_explosion_min
 		,ps_accuracy_max
 		,ps_accuracy_mean
-		,ps_accuracy_min
+		,ps_accuracy_max * 0.75 + ps_accuracy_mean * 0.25 AS ps_accuracy_min
 		,ps_arm_strength_max
 		,ps_arm_strength_mean
-		,ps_arm_strength_min
+		,ps_arm_strength_max * 0.75 + ps_arm_strength_mean * 0.25 AS ps_arm_strength_min
 		,ps_ball_awareness_playing_the_ball_max
 		,ps_ball_awareness_playing_the_ball_mean
-		,ps_ball_awareness_playing_the_ball_min
+		,ps_ball_awareness_playing_the_ball_max * 0.75 + ps_ball_awareness_playing_the_ball_mean * 0.25 AS ps_ball_awareness_playing_the_ball_min
 		,ps_ball_protection_max
 		,ps_ball_protection_mean
-		,ps_ball_protection_min
+		,ps_ball_protection_max * 0.75 + ps_ball_protection_mean * 0.25 AS ps_ball_protection_min
 		,ps_blitz_pickup_fbi_max
 		,ps_blitz_pickup_fbi_mean
-		,ps_blitz_pickup_fbi_min
+		,ps_blitz_pickup_fbi_max * 0.75 + ps_blitz_pickup_fbi_mean * 0.25 AS ps_blitz_pickup_fbi_min
 		,ps_blocking_max
 		,ps_blocking_mean
-		,ps_blocking_min
+		,ps_blocking_max * 0.75 + ps_blocking_mean * 0.25 AS ps_blocking_min
 		,ps_close_on_the_ball_range_max
 		,ps_close_on_the_ball_range_mean
-		,ps_close_on_the_ball_range_min
+		,ps_close_on_the_ball_range_max * 0.75 + ps_close_on_the_ball_range_mean * 0.25 AS ps_close_on_the_ball_range_min
 		,ps_cover_ability_range_max
 		,ps_cover_ability_range_mean
-		,ps_cover_ability_range_min
+		,ps_cover_ability_range_max * 0.75 + ps_cover_ability_range_mean * 0.25 AS ps_cover_ability_range_min
 		,ps_decision_making_max
 		,ps_decision_making_mean
-		,ps_decision_making_min
+		,ps_decision_making_max * 0.75 + ps_decision_making_mean * 0.25 AS ps_decision_making_min
 		,ps_diagnose_instincts_max
 		,ps_diagnose_instincts_mean
-		,ps_diagnose_instincts_min
+		,ps_diagnose_instincts_max * 0.75 + ps_diagnose_instincts_mean * 0.25 AS ps_diagnose_instincts_min
 		,ps_drops_setup_pocket_awareness_max
 		,ps_drops_setup_pocket_awareness_mean
-		,ps_drops_setup_pocket_awareness_min
+		,ps_drops_setup_pocket_awareness_max * 0.75 + ps_drops_setup_pocket_awareness_mean * 0.25 AS ps_drops_setup_pocket_awareness_min
 		,ps_hand_use_max
 		,ps_hand_use_mean
-		,ps_hand_use_min
+		,ps_hand_use_max * 0.75 + ps_hand_use_mean * 0.25 AS ps_hand_use_min
 		,ps_hands_body_adjustment_max
 		,ps_hands_body_adjustment_mean
-		,ps_hands_body_adjustment_min
+		,ps_hands_body_adjustment_max * 0.75 + ps_hands_body_adjustment_mean * 0.25 AS ps_hands_body_adjustment_min
 		,ps_inside_run_max
 		,ps_inside_run_mean
-		,ps_inside_run_min
+		,ps_inside_run_max * 0.75 + ps_inside_run_mean * 0.25 AS ps_inside_run_min
 		,ps_lateral_movement_max
 		,ps_lateral_movement_mean
-		,ps_lateral_movement_min
+		,ps_lateral_movement_max * 0.75 + ps_lateral_movement_mean * 0.25 AS ps_lateral_movement_min
 		,ps_mental_awareness_max
 		,ps_mental_awareness_mean
-		,ps_mental_awareness_min
+		,ps_mental_awareness_max * 0.75 + ps_mental_awareness_mean * 0.25 AS ps_mental_awareness_min
 		,ps_mm_cover_max
 		,ps_mm_cover_mean
-		,ps_mm_cover_min
+		,ps_mm_cover_max * 0.75 + ps_mm_cover_mean * 0.25 AS ps_mm_cover_min
 		,ps_outside_run_max
 		,ps_outside_run_mean
-		,ps_outside_run_min
+		,ps_outside_run_max * 0.75 + ps_outside_run_mean * 0.25 AS ps_outside_run_min
 		,ps_pass_blocking_max
 		,ps_pass_blocking_mean
-		,ps_pass_blocking_min
+		,ps_pass_blocking_max * 0.75 + ps_pass_blocking_mean * 0.25 AS ps_pass_blocking_min
 		,ps_pass_rush_ability_max
 		,ps_pass_rush_ability_mean
-		,ps_pass_rush_ability_min
+		,ps_pass_rush_ability_max * 0.75 + ps_pass_rush_ability_mean * 0.25 AS ps_pass_rush_ability_min
 		,ps_play_making_max
 		,ps_play_making_mean
-		,ps_play_making_min
+		,ps_play_making_max * 0.75 + ps_play_making_mean * 0.25 AS ps_play_making_min
 		,ps_poa_run_shed_blockers_max
 		,ps_poa_run_shed_blockers_mean
-		,ps_poa_run_shed_blockers_min
+		,ps_poa_run_shed_blockers_max * 0.75 + ps_poa_run_shed_blockers_mean * 0.25 AS ps_poa_run_shed_blockers_min
 		,ps_pulling_max
 		,ps_pulling_mean
-		,ps_pulling_min
+		,ps_pulling_max * 0.75 + ps_pulling_mean * 0.25 AS ps_pulling_min
 		,ps_pursuit_max
 		,ps_pursuit_mean
-		,ps_pursuit_min
+		,ps_pursuit_max * 0.75 + ps_pursuit_mean * 0.25 AS ps_pursuit_min
 		,ps_release_max
 		,ps_release_mean
-		,ps_release_min
+		,ps_release_max * 0.75 + ps_release_mean * 0.25 AS ps_release_min
 		,ps_routes_max
 		,ps_routes_mean
-		,ps_routes_min
+		,ps_routes_max * 0.75 + ps_routes_mean * 0.25 AS ps_routes_min
 		,ps_run_after_catch_max
 		,ps_run_after_catch_mean
-		,ps_run_after_catch_min
+		,ps_run_after_catch_max * 0.75 + ps_run_after_catch_mean * 0.25 AS ps_run_after_catch_min
 		,ps_run_defense_2gap_max
 		,ps_run_defense_2gap_mean
-		,ps_run_defense_2gap_min
+		,ps_run_defense_2gap_max * 0.75 + ps_run_defense_2gap_mean * 0.25 AS ps_run_defense_2gap_min
 		,ps_shed_hand_use_max
 		,ps_shed_hand_use_mean
-		,ps_shed_hand_use_min
+		,ps_shed_hand_use_max * 0.75 + ps_shed_hand_use_mean * 0.25 AS ps_shed_hand_use_min
 		,ps_sustain_run_blocking_max
 		,ps_sustain_run_blocking_mean
-		,ps_sustain_run_blocking_min
+		,ps_sustain_run_blocking_max * 0.75 + ps_sustain_run_blocking_mean * 0.25 AS ps_sustain_run_blocking_min
 		,ps_tackling_max
 		,ps_tackling_mean
-		,ps_tackling_min
+		,ps_tackling_max * 0.75 + ps_tackling_mean * 0.25 AS ps_tackling_min
 		,ps_versatility_max
 		,ps_versatility_mean
-		,ps_versatility_min
+		,ps_versatility_max * 0.75 + ps_versatility_mean * 0.25 AS ps_versatility_min
 		,ps_vision_instincts_max
 		,ps_vision_instincts_mean
-		,ps_vision_instincts_min
+		,ps_vision_instincts_max * 0.75 + ps_vision_instincts_mean * 0.25 AS ps_vision_instincts_min
 		,ps_zone_cover_max
 		,ps_zone_cover_mean
-		,ps_zone_cover_min
+		,ps_zone_cover_max * 0.75 + ps_zone_cover_mean * 0.25 AS ps_zone_cover_min
 		,sticd_character_max
 		,sticd_character_mean
-		,sticd_character_min
+		,sticd_character_max * 0.75 + sticd_character_mean * 0.25 AS sticd_character_min
 		,sticd_durability_max
 		,sticd_durability_mean
-		,sticd_durability_min
+		,sticd_durability_max * 0.75 + sticd_durability_mean * 0.25 AS sticd_durability_min
 		,sticd_instincts_max
 		,sticd_instincts_mean
-		,sticd_instincts_min
+		,sticd_instincts_max * 0.75 + sticd_instincts_mean * 0.25 AS sticd_instincts_min
 		,sticd_speed_max
 		,sticd_speed_mean
-		,sticd_speed_min
+		,sticd_speed_max * 0.75 + sticd_speed_mean * 0.25 AS sticd_speed_min
 		,sticd_toughness_max
 		,sticd_toughness_mean
-		,sticd_toughness_min
+		,sticd_toughness_max * 0.75 + sticd_toughness_mean * 0.25 AS sticd_toughness_min
 		,intangibles_off_field_character_max
 		,intangibles_off_field_character_mean
-		,intangibles_off_field_character_min
+		,intangibles_off_field_character_max * 0.75 + intangibles_off_field_character_mean * 0.25 AS intangibles_off_field_character_min
 		,intangibles_on_field_character_max
 		,intangibles_on_field_character_mean
-		,intangibles_on_field_character_min
+		,intangibles_on_field_character_max * 0.75 + intangibles_on_field_character_mean * 0.25 AS intangibles_on_field_character_min
 		,CASE WHEN [A] > 0 THEN 1 ELSE 0 END AS flag_a
 		,CASE WHEN [B] > 0 THEN 1 ELSE 0 END AS flag_b
 		,CASE WHEN [C] > 0 THEN 1 ELSE 0 END AS flag_c
@@ -1082,7 +1086,11 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades
 		,CASE WHEN [U] > 0 THEN 1 ELSE 0 END AS flag_u
 		,CASE WHEN [X] > 0 THEN 1 ELSE 0 END AS flag_x
 		,CASE WHEN [Z] > 0 THEN 1 ELSE 0 END AS flag_y
-		,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(CAST(sal.salaries AS FLOAT),CAST(ins.salaries AS FLOAT),0) END AS pct_of_cap
+		,CASE WHEN pl.draft_year > @current_season OR sal.salaries IN ('Pre-2011') OR (pl.draft_year <= 2007 AND sal.salaries IS NULL) THEN NULL 
+			ELSE CASE WHEN sal.salaries IN ('Injured') THEN ins.salaries
+					ELSE COALESCE(CAST(sal.salaries AS FLOAT),0) 
+				END 
+		END AS pct_of_cap
 		,pg.season
 		,CASE WHEN pl.draft_year > @current_season THEN 1 ELSE season_in_league END AS season_in_league
 		,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
@@ -1100,7 +1108,7 @@ INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_grades
 		ON pl.position_id = pn.id  
 	LEFT JOIN AnalyticsWork.dbo.salaries_for_modeling sal
 		ON ep_mean.bane_player_id = sal.id
-		AND sal.salaries NOT IN ('Injured','Pre-2011')
+		--AND sal.salaries NOT IN ('Injured','Pre-2011')
 	LEFT JOIN #temp_pro_grades pg
 		ON ep_mean.bane_player_id = pg.bane_player_id
 	LEFT JOIN #temp_injured_salaries_one_row ins
