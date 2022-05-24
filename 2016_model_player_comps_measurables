@@ -1,0 +1,513 @@
+-- Preparation:
+	-- Check if temp_ravens_measurables table exists, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_ravens_measurables') IS NOT NULL
+		DROP TABLE ##temp_ravens_measurables
+	-- Check if temp_measurables_position_means table exists, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_measurables_position_means') IS NOT NULL
+		DROP TABLE ##temp_measurables_position_means
+	-- Check if temp_measurables_z_scores_all table exists, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_measurables_z_scores_all') IS NOT NULL
+		DROP TABLE ##temp_measurables_z_scores_all
+	-- Check if temp_grades_cb table exists, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_grades_cb') IS NOT NULL
+		DROP TABLE ##temp_grades_cb
+	-- Check if temp_grades_cb_mean table exists, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_grades_cb_means') IS NOT NULL
+		DROP TABLE ##temp_grades_cb_means
+
+		
+		
+-- Assign Target Player and create all the empty variables for his measurables to go into
+--	using Breshad Perriman as target player for now
+DECLARE @player_id AS INT = 38553
+
+--These variables are for his z-scores
+DECLARE @main_player_z_score_height AS NUMERIC(9,7)
+DECLARE @main_player_z_score_weight AS NUMERIC(9,7)
+DECLARE @main_player_z_score_arm_length AS NUMERIC(9,7)
+DECLARE @main_player_z_score_hand_span AS NUMERIC(9,7)
+DECLARE @main_player_z_score_wing_span AS NUMERIC(9,7)
+DECLARE @main_player_z_score_test_correct AS NUMERIC(9,7)
+DECLARE @main_player_z_score_forty_yard_dash AS NUMERIC(9,7)
+DECLARE @main_player_z_score_twenty_yard_dash AS NUMERIC(9,7)
+DECLARE @main_player_z_score_ten_yard_dash AS NUMERIC(9,7)
+DECLARE @main_player_z_score_bench_press_reps AS NUMERIC(9,7)
+DECLARE @main_player_z_score_broad_jump AS NUMERIC(9,7)
+DECLARE @main_player_z_score_three_cone AS NUMERIC(9,7)
+DECLARE @main_player_z_score_vertical_jump AS NUMERIC(9,7)
+DECLARE @main_player_z_score_short_shuttle AS NUMERIC(9,7)
+DECLARE @main_player_z_score_long_shuttle AS NUMERIC(9,7)
+DECLARE @main_player_z_score_long_snap AS NUMERIC(9,7)
+
+DECLARE @main_player_z_score_athletic_ability_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_character_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_competitiveness_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_durability_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_explosion_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_instinct_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_playing_speed_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_size_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_speed_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_toughness_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_stic_index_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_pos_spec_close_on_ball_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_pos_spec_hands_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_pos_spec_key_and_diagnose_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_pos_spec_man_to_man_coverage_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_pos_spec_range_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_pos_spec_run_support_tackling_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_pos_spec_zone_coverage_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_z_score_pos_spec_special_teams_grade_cb AS NUMERIC(9,7)
+DECLARE @main_player_physical_alert_b_cb AS BINARY
+DECLARE @main_player_physical_alert_f_cb AS BINARY
+DECLARE @main_player_physical_alert_s_cb AS BINARY
+DECLARE @main_player_physical_alert_t_cb AS BINARY
+DECLARE @main_player_physical_alert_z_cb AS BINARY
+DECLARE @main_player_intangible_alert_a_cb AS BINARY
+DECLARE @main_player_intangible_alert_c_cb AS BINARY
+DECLARE @main_player_intangible_alert_d_cb AS BINARY
+DECLARE @main_player_intangible_alert_e_cb AS BINARY
+DECLARE @main_player_intangible_alert_m_cb AS BINARY
+DECLARE @main_player_intangible_alert_o_cb AS BINARY
+DECLARE @main_player_intangible_alert_p_cb AS BINARY
+DECLARE @main_player_intangible_alert_u_cb AS BINARY
+DECLARE @main_player_intangible_alert_x_cb AS BINARY
+DECLARE @main_player_intangible_alert_k_cb AS BINARY
+
+-- Create a table with the measurables for all players
+SELECT CollegePlayerID
+	  ,player_id
+	  ,GSISID
+	  ,first_name
+	  ,last_name
+	  ,nfl_position_id
+	  ,((CAST(SUBSTRING(m.height,1,1) AS INT) * 12) + CAST(SUBSTRING(m.height,2,2) AS INT) + (CAST(SUBSTRING(m.height,4,1) AS INT) * .125)) AS height
+	  ,CAST(m.weight AS INT) AS weight
+	  ,(CAST(SUBSTRING(arm_length,1,2) AS INT) + (CAST(SUBSTRING(arm_length,4,1) AS INT) * .125)) AS arm_length
+	  ,CASE WHEN SUBSTRING(hand_span,1,1)='1' THEN (CAST(SUBSTRING(hand_span,1,2) AS INT) + (CAST(SUBSTRING(hand_span,4,1) AS INT) * .125))
+	   ELSE (CAST(SUBSTRING(hand_span,1,1) AS INT) + (CAST(SUBSTRING(hand_span,3,1) AS INT) * .125))
+	   END AS hand_span
+	  ,(CAST(SUBSTRING(wing_span,1,2) AS INT) + (CAST(SUBSTRING(wing_span,4,1) AS INT) * .125)) AS wing_span
+	  ,CAST(test_correct AS INT) AS test_correct
+	  ,COALESCE(
+			CASE --WHEN forty_yard_dash_second_attempt < forty_yard_dash_third_attempt AND forty_yard_dash_second_attempt < forty_yard_dash_fourth_attempt THEN forty_yard_dash_second_attempt
+			WHEN forty_yard_dash_second_attempt < forty_yard_dash_third_attempt AND forty_yard_dash_second_attempt < forty_yard_dash_fourth_attempt THEN CAST(forty_yard_dash_second_attempt AS NUMERIC(9,2))
+			WHEN forty_yard_dash_third_attempt < forty_yard_dash_second_attempt AND forty_yard_dash_third_attempt < forty_yard_dash_fourth_attempt THEN CAST(forty_yard_dash_third_attempt AS NUMERIC(9,2))
+			ELSE CAST(forty_yard_dash_fourth_attempt AS NUMERIC(9,2))
+			END 
+			,CAST(forty_yard_dash_average AS NUMERIC(9,2))
+			) AS forty_yard_dash
+	  ,COALESCE(
+			CASE WHEN twenty_yard_dash_first_attempt < twenty_yard_dash_second_attempt AND twenty_yard_dash_first_attempt < twenty_yard_dash_third_attempt AND twenty_yard_dash_first_attempt < twenty_yard_dash_fourth_attempt THEN CAST(twenty_yard_dash_first_attempt AS NUMERIC(9,2))
+			WHEN twenty_yard_dash_second_attempt < twenty_yard_dash_first_attempt AND twenty_yard_dash_second_attempt < twenty_yard_dash_third_attempt AND twenty_yard_dash_second_attempt < twenty_yard_dash_fourth_attempt THEN CAST(twenty_yard_dash_second_attempt AS NUMERIC(9,2))
+			WHEN twenty_yard_dash_third_attempt < twenty_yard_dash_first_attempt AND twenty_yard_dash_third_attempt < twenty_yard_dash_second_attempt AND twenty_yard_dash_third_attempt < twenty_yard_dash_fourth_attempt THEN CAST(twenty_yard_dash_third_attempt AS NUMERIC(9,2))
+			ELSE CAST(twenty_yard_dash_fourth_attempt AS NUMERIC(9,2))
+			END 
+			,CAST(twenty_yard_dash_average AS NUMERIC(9,2))
+			) AS twenty_yard_dash
+	  ,COALESCE(
+			CASE WHEN ten_yard_dash_first_attempt < ten_yard_dash_second_attempt AND ten_yard_dash_first_attempt < ten_yard_dash_dash_third_attempt AND ten_yard_dash_first_attempt < ten_yard_dash_dash_fourth_attempt THEN CAST(ten_yard_dash_first_attempt AS NUMERIC(9,2)) 
+			WHEN ten_yard_dash_second_attempt < ten_yard_dash_first_attempt AND ten_yard_dash_second_attempt < ten_yard_dash_dash_third_attempt AND ten_yard_dash_second_attempt < ten_yard_dash_dash_fourth_attempt THEN CAST(ten_yard_dash_second_attempt AS NUMERIC(9,2)) 
+			WHEN ten_yard_dash_dash_third_attempt < ten_yard_dash_first_attempt AND ten_yard_dash_dash_third_attempt < ten_yard_dash_second_attempt AND ten_yard_dash_dash_third_attempt < ten_yard_dash_dash_fourth_attempt THEN CAST(ten_yard_dash_dash_third_attempt AS NUMERIC(9,2)) 
+			ELSE CAST(ten_yard_dash_dash_fourth_attempt AS NUMERIC(9,2)) 
+			END
+			,ten_yard_dash_average
+			) AS ten_yard_dash
+	  ,CASE WHEN bench_press_reps_first_attempt > bench_press_reps_second_attempt THEN CAST(bench_press_reps_first_attempt AS NUMERIC(9,2)) 
+	   ELSE CAST(bench_press_reps_second_attempt AS NUMERIC(9,2))
+	   END AS bench_press_reps
+	  ,COALESCE(
+		   CASE WHEN broad_jump_first_attempt_inches > broad_jump_second_attempt_inches THEN CAST(broad_jump_first_attempt_inches AS NUMERIC(9,2))
+		   ELSE CAST(broad_jump_second_attempt_inches AS NUMERIC(9,2))
+		   END
+		   ,CAST(broad_jump_average_in_inches AS NUMERIC(9,2))
+		   ) AS broad_jump
+	  ,COALESCE(
+		   CASE WHEN three_cone_first_attempt < three_cone_second_attempt THEN CAST(three_cone_first_attempt AS NUMERIC(9,2))
+		   ELSE CAST(three_cone_second_attempt AS NUMERIC(9,2))
+		   END
+		   ,CAST(three_cone_average AS NUMERIC(9,2))
+		   ) AS three_cone	
+	  ,COALESCE(
+		   CASE WHEN vertical_jump_first_attempt > vertical_jump_second_attempt THEN CAST(vertical_jump_first_attempt AS NUMERIC(9,2))
+		   ELSE CAST(vertical_jump_second_attempt AS NUMERIC(9,2))
+		   END
+		   ,CAST(vertical_jump_average AS NUMERIC(9,2))
+		   ) AS vertical_jump
+	  ,COALESCE(
+		   CASE WHEN short_shuttle_first_attempt < short_shuttle_second_attempt THEN CAST(short_shuttle_first_attempt AS NUMERIC(9,2)) 
+		   ELSE CAST(short_shuttle_second_attempt AS NUMERIC(9,2)) 
+		   END
+		   ,CAST(short_shuttle_average AS NUMERIC(9,2)) 
+		   ) AS short_shuttle	
+	  ,COALESCE(
+		   CASE WHEN long_shuttle_first_attempt < long_shuttle_second_attempt THEN CAST(long_shuttle_first_attempt AS NUMERIC(9,2)) 
+		   ELSE CAST(long_shuttle_second_attempt AS NUMERIC(9,2)) 
+		   END
+		   ,CAST(long_shuttle_average AS NUMERIC(9,2)) 
+		   ) AS long_shuttle	
+	  ,CASE WHEN long_snap_first_attempt < long_snap_second_attempt AND long_snap_first_attempt < long_snap_third_attempt AND long_snap_first_attempt < long_snap_fourth_attempt THEN CAST(long_snap_first_attempt AS NUMERIC(9,2)) 
+			WHEN long_snap_second_attempt < long_snap_first_attempt AND long_snap_second_attempt < long_snap_third_attempt AND long_snap_second_attempt < long_snap_fourth_attempt THEN CAST(long_snap_second_attempt AS NUMERIC(9,2)) 
+			WHEN long_snap_third_attempt < long_snap_first_attempt AND long_snap_third_attempt < long_snap_second_attempt AND long_snap_third_attempt < long_snap_fourth_attempt THEN CAST(long_snap_third_attempt AS NUMERIC(9,2)) 
+			ELSE CAST(long_snap_fourth_attempt AS NUMERIC(9,2)) 
+			END AS long_snap
+  INTO ##temp_ravens_measurables 
+  FROM RavensIncoming.dbo.ravens_measurables m
+  INNER JOIN RavensIncoming.dbo.non_pro_db_college_player_extracts cpe
+		  ON m.collegeplayerid=cpe.college_player_id
+ORDER BY nfl_position_id
+
+ 
+ -- Get the mean and standard deviation (by position) for all the measurables
+  SELECT nfl_position_id
+	    ,AVG(height) as height_pos_mean
+	    ,STDEV(height) as height_pos_stdev
+	    ,AVG(weight) as weight_pos_mean
+	    ,STDEV(weight) as weight_pos_stdev
+	    ,AVG(arm_length) as arm_length_pos_mean
+	    ,STDEV(arm_length) as arm_length_pos_stdev
+	    ,AVG(hand_span) as hand_span_pos_mean
+	    ,STDEV(hand_span) as hand_span_pos_stdev
+	    ,AVG(wing_span) as wing_span_pos_mean
+	    ,STDEV(wing_span) as wing_span_pos_stdev
+	    ,AVG(test_correct) as test_correct_pos_mean
+	    ,STDEV(test_correct) as test_correct_pos_stdev
+	    ,AVG(forty_yard_dash) as forty_yard_dash_pos_mean
+	    ,STDEV(forty_yard_dash) as forty_yard_dash_pos_stdev
+	    ,AVG(twenty_yard_dash) as twenty_yard_dash_pos_mean
+	    ,STDEV(twenty_yard_dash) as twenty_yard_dash_pos_stdev
+	    ,AVG(ten_yard_dash) as ten_yard_dash_pos_mean
+	    ,STDEV(ten_yard_dash) as ten_yard_dash_pos_stdev
+	    ,AVG(bench_press_reps) as bench_press_reps_pos_mean
+	    ,STDEV(bench_press_reps) as bench_press_reps_pos_stdev
+	    ,AVG(broad_jump) as broad_jump_pos_mean
+	    ,STDEV(broad_jump) as broad_jump_pos_stdev
+	    ,AVG(three_cone) as three_cone_pos_mean
+	    ,STDEV(three_cone) as three_cone_pos_stdev
+	    ,AVG(vertical_jump) as vertical_jump_pos_mean
+	    ,STDEV(vertical_jump) as vertical_jump_pos_stdev
+	    ,AVG(short_shuttle) as short_shuttle_pos_mean
+	    ,STDEV(short_shuttle) as short_shuttle_pos_stdev
+	    ,AVG(long_shuttle) as long_shuttle_pos_mean
+	    ,STDEV(long_shuttle) as long_shuttle_pos_stdev
+	    ,AVG(long_snap) as long_snap_pos_mean
+	    ,STDEV(long_snap) as long_snap_pos_stdev
+	INTO ##temp_measurables_position_means
+	FROM ##temp_ravens_measurables
+GROUP BY nfl_position_id
+
+-- Create position-based z scores for all measurables for all players
+    SELECT ravens.*
+	      ,(height-height_pos_mean)/height_pos_stdev as z_score_height
+		  ,(weight-weight_pos_mean)/weight_pos_stdev as z_score_weight
+	      ,(arm_length-arm_length_pos_mean)/arm_length_pos_stdev as z_score_arm_length
+		  ,(hand_span-hand_span_pos_mean)/hand_span_pos_stdev as z_score_hand_span
+		  ,(wing_span-wing_span_pos_mean)/wing_span_pos_stdev as z_score_wing_span
+		  ,(test_correct-hand_span_pos_mean)/test_correct_pos_stdev as z_score_test_correct
+		  ,(forty_yard_dash-forty_yard_dash_pos_mean)/forty_yard_dash_pos_stdev as z_score_forty_yard_dash
+		  ,(twenty_yard_dash-forty_yard_dash_pos_mean)/twenty_yard_dash_pos_stdev as z_score_twenty_yard_dash
+		  ,(ten_yard_dash-ten_yard_dash_pos_mean)/ten_yard_dash_pos_stdev as z_score_ten_yard_dash
+		  ,(bench_press_reps-bench_press_reps_pos_mean)/bench_press_reps_pos_stdev as z_score_bench_press_reps
+		  ,(broad_jump-broad_jump_pos_mean)/broad_jump_pos_stdev as z_score_broad_jump
+		  ,(three_cone-three_cone_pos_mean)/three_cone_pos_stdev as z_score_three_cone
+		  ,(vertical_jump-vertical_jump_pos_mean)/vertical_jump_pos_stdev as z_score_vertical_jump
+		  ,(short_shuttle-short_shuttle_pos_mean)/short_shuttle_pos_stdev as z_score_short_shuttle
+		  ,(long_shuttle-long_shuttle_pos_mean)/long_shuttle_pos_stdev as z_score_long_shuttle
+		  ,(long_snap-long_snap_pos_mean)/long_snap_pos_stdev as z_score_long_snap
+	  INTO ##temp_measurables_z_scores_all
+      FROM ##temp_measurables_position_means pos
+INNER JOIN ##temp_ravens_measurables ravens
+		ON pos.nfl_position_id=ravens.nfl_position_id
+
+-- Select the target player's measurable z-scores into the empty variables
+    SELECT @main_player_z_score_height = z_score_height
+		  ,@main_player_z_score_weight = z_score_weight
+	      ,@main_player_z_score_arm_length = z_score_arm_length
+		  ,@main_player_z_score_hand_span = z_score_hand_span
+		  ,@main_player_z_score_wing_span = z_score_wing_span
+		  ,@main_player_z_score_test_correct = z_score_test_correct
+		  ,@main_player_z_score_forty_yard_dash = z_score_forty_yard_dash
+		  ,@main_player_z_score_twenty_yard_dash = z_score_twenty_yard_dash
+		  ,@main_player_z_score_ten_yard_dash = z_score_ten_yard_dash
+		  ,@main_player_z_score_bench_press_reps = z_score_bench_press_reps
+		  ,@main_player_z_score_broad_jump = z_score_broad_jump
+		  ,@main_player_z_score_three_cone = z_score_three_cone
+		  ,@main_player_z_score_vertical_jump = z_score_vertical_jump
+		  ,@main_player_z_score_short_shuttle = z_score_short_shuttle
+		  ,@main_player_z_score_long_shuttle = z_score_long_shuttle
+		  ,@main_player_z_score_long_snap = z_score_long_snap
+      FROM ##temp_measurables_z_scores_all
+	 WHERE player_id=@player_id
+
+
+-- Create a table with the grades for all corners
+--   Since most players have more than one grade, you need to average all of the player's grades
+--      This might a good place to try normalizing the position specifics by scout since they give out 3-7s at different rates
+    SELECT player_id
+		  ,first_name
+		  ,last_name
+          ,nfl_player_id
+          ,college_nfl_id
+		  ,scout_id
+		  ,'CB' AS position_text
+	      ,athletic_ability_grade
+		  ,character_grade
+		  ,competitiveness_grade
+		  ,durability_grade
+		  ,explosion_grade
+		  ,instinct_grade
+		  ,playing_speed_grade
+		  ,position_specifics_close_on_ball_grade
+          ,position_specifics_hands_grade
+          ,position_specifics_key_and_diagnose_grade
+          ,position_specifics_man_to_man_coverage_grade
+          ,position_specifics_range_grade
+          ,position_specifics_run_support_tackling_grade
+          ,position_specifics_special_teams_grade
+          ,position_specifics_zone_coverage_grade
+		  ,size_grade
+          ,speed_grade
+          ,stic_index
+          ,toughness_grade
+		  ,CASE WHEN physical_alerts LIKE '%B%' OR physical_alerts LIKE '%b' THEN 1 ELSE 0 END AS physical_alert_b
+		  ,CASE WHEN physical_alerts LIKE '%F%' OR physical_alerts LIKE '%f' THEN 1 ELSE 0 END AS physical_alert_f
+		  ,CASE WHEN physical_alerts LIKE '%S%' OR physical_alerts LIKE '%s' THEN 1 ELSE 0 END AS physical_alert_s
+		  ,CASE WHEN physical_alerts LIKE '%T%' OR physical_alerts LIKE '%t' THEN 1 ELSE 0 END AS physical_alert_t
+		  ,CASE WHEN physical_alerts LIKE '%Z%' OR physical_alerts LIKE '%z' THEN 1 ELSE 0 END AS physical_alert_z
+		  ,CASE WHEN intangible_alerts LIKE '%A%' OR physical_alerts LIKE '%a' THEN 1 ELSE 0 END AS intangible_alert_a
+		  ,CASE WHEN intangible_alerts LIKE '%C%' OR physical_alerts LIKE '%c' THEN 1 ELSE 0 END AS intangible_alert_c
+		  ,CASE WHEN intangible_alerts LIKE '%D%' OR physical_alerts LIKE '%d' THEN 1 ELSE 0 END AS intangible_alert_d
+		  ,CASE WHEN intangible_alerts LIKE '%E%' OR physical_alerts LIKE '%e' THEN 1 ELSE 0 END AS intangible_alert_e
+		  ,CASE WHEN intangible_alerts LIKE '%M%' OR physical_alerts LIKE '%m' THEN 1 ELSE 0 END AS intangible_alert_m
+		  ,CASE WHEN intangible_alerts LIKE '%O%' OR physical_alerts LIKE '%o' THEN 1 ELSE 0 END AS intangible_alert_o
+		  ,CASE WHEN intangible_alerts LIKE '%P%' OR physical_alerts LIKE '%p' THEN 1 ELSE 0 END AS intangible_alert_p
+		  ,CASE WHEN intangible_alerts LIKE '%U%' OR physical_alerts LIKE '%u' THEN 1 ELSE 0 END AS intangible_alert_u
+		  ,CASE WHEN intangible_alerts LIKE '%X%' OR physical_alerts LIKE '%x' THEN 1 ELSE 0 END AS intangible_alert_x
+		  ,CASE WHEN intangible_alerts LIKE '%K%' OR physical_alerts LIKE '%k' THEN 1 ELSE 0 END AS intangible_alert_k
+	  INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_corner_reports corner
+INNER JOIN RavensIncoming.dbo.stratbridge_players players
+		ON corner.player_id=players.nfl_player_id
+     WHERE report_type in (1,3,4)
+
+-- Get the mean and standard deviation for the grades for the corners
+  SELECT 'CB' AS position_text
+		,AVG(athletic_ability_grade) as athletic_ability_grade_cb_mean
+	    ,STDEV(athletic_ability_grade) as athletic_ability_grade_cb_stdev
+	    ,AVG(character_grade) as character_grade_cb_mean
+	    ,STDEV(character_grade) as character_grade_cb_stdev
+	    ,AVG(competitiveness_grade) as competitiveness_grade_cb_mean
+	    ,STDEV(competitiveness_grade) as competitiveness_grade_cb_stdev
+	    ,AVG(durability_grade) as durability_grade_cb_mean
+	    ,STDEV(durability_grade) as durability_grade_cb_stdev
+	    ,AVG(explosion_grade) as explosion_grade_cb_mean
+	    ,STDEV(explosion_grade) as explosion_grade_cb_stdev
+	    ,AVG(instinct_grade) as instinct_grade_cb_mean
+	    ,STDEV(instinct_grade) as instinct_grade_cb_stdev
+	    ,AVG(playing_speed_grade) as playing_speed_grade_cb_mean
+	    ,STDEV(playing_speed_grade) as playing_speed_grade_cb_stdev
+	    ,AVG(size_grade) as size_grade_cb_mean
+	    ,STDEV(size_grade) as size_grade_cb_stdev
+	    ,AVG(speed_grade) as speed_grade_cb_mean
+	    ,STDEV(speed_grade) as speed_grade_cb_stdev
+	    ,AVG(toughness_grade) as toughness_grade_cb_mean
+	    ,STDEV(toughness_grade) as toughness_grade_cb_stdev
+	    ,AVG(CAST(stic_index AS INT)) as stic_index_cb_mean
+	    ,STDEV(CAST(stic_index AS INT))as stic_index_cb_stdev
+	    ,AVG(position_specifics_close_on_ball_grade) as position_specifics_close_on_ball_grade_cb_mean
+	    ,STDEV(position_specifics_close_on_ball_grade) as position_specifics_close_on_ball_grade_cb_stdev
+	    ,AVG(position_specifics_hands_grade) as position_specifics_hands_grade_cb_mean
+	    ,STDEV(position_specifics_hands_grade) as position_specifics_hands_grade_cb_stdev
+	    ,AVG(position_specifics_key_and_diagnose_grade) as position_specifics_key_and_diagnose_grade_cb_mean
+	    ,STDEV(position_specifics_key_and_diagnose_grade) as position_specifics_key_and_diagnose_grade_cb_stdev
+	    ,AVG(position_specifics_man_to_man_coverage_grade) as position_specifics_man_to_man_coverage_grade_cb_mean
+	    ,STDEV(position_specifics_man_to_man_coverage_grade) as position_specifics_man_to_man_coverage_grade_cb_stdev
+	    ,AVG(position_specifics_range_grade) as position_specifics_range_grade_cb_mean
+	    ,STDEV(position_specifics_range_grade) as position_specifics_range_grade_cb_stdev
+	    ,AVG(position_specifics_run_support_tackling_grade) as position_specifics_run_support_tackling_grade_cb_mean
+	    ,STDEV(position_specifics_run_support_tackling_grade) as position_specifics_run_support_tackling_grade_cb_stdev
+	    ,AVG(position_specifics_zone_coverage_grade) as position_specifics_zone_coverage_grade_cb_mean
+	    ,STDEV(position_specifics_zone_coverage_grade) as position_specifics_zone_coverage_grade_cb_stdev
+	    ,AVG(position_specifics_special_teams_grade) as position_specifics_special_teams_grade_cb_mean
+	    ,STDEV(position_specifics_special_teams_grade) as position_specifics_special_teams_grade_cb_stdev
+	INTO ##temp_grades_cb_means
+	FROM ##temp_grades_cb
+
+-- Create position-based z scores for the grades for the corners
+    SELECT corners.*
+	      ,(athletic_ability_grade-athletic_ability_grade_cb_mean)/athletic_ability_grade_cb_stdev as z_score_athletic_ability_grade_cb
+	      ,(character_grade-character_grade_cb_mean)/character_grade_cb_stdev as z_score_character_grade_cb
+		  ,(competitiveness_grade-competitiveness_grade_cb_mean)/competitiveness_grade_cb_stdev as z_score_competitiveness_grade_cb
+		  ,(durability_grade-durability_grade_cb_mean)/durability_grade_cb_stdev as z_score_durability_grade_cb
+		  ,(explosion_grade-explosion_grade_cb_mean)/explosion_grade_cb_stdev as z_score_explosion_grade_cb
+		  ,(instinct_grade-instinct_grade_cb_mean)/instinct_grade_cb_stdev as z_score_instinct_grade_cb
+		  ,(playing_speed_grade-playing_speed_grade_cb_mean)/playing_speed_grade_cb_stdev as z_score_playing_speed_grade_cb
+		  ,(size_grade-size_grade_cb_mean)/size_grade_cb_stdev as z_score_size_grade_cb
+		  ,(speed_grade-speed_grade_cb_mean)/speed_grade_cb_stdev as z_score_speed_grade_cb
+		  ,(toughness_grade-toughness_grade_cb_mean)/toughness_grade_cb_stdev as z_score_toughness_grade_cb
+		  ,(stic_index-stic_index_cb_mean)/stic_index_cb_stdev as z_score_stic_index_cb
+		  ,(position_specifics_close_on_ball_grade-position_specifics_close_on_ball_grade_cb_mean)/position_specifics_close_on_ball_grade_cb_stdev as z_score_position_specifics_close_on_ball_grade_cb
+		  ,(position_specifics_hands_grade-position_specifics_hands_grade_cb_mean)/position_specifics_hands_grade_cb_stdev as z_score_position_specifics_hands_grade_cb
+		  ,(position_specifics_key_and_diagnose_grade-position_specifics_key_and_diagnose_grade_cb_mean)/position_specifics_key_and_diagnose_grade_cb_stdev as z_score_position_specifics_key_and_diagnose_grade_cb
+		  ,(position_specifics_man_to_man_coverage_grade-position_specifics_man_to_man_coverage_grade_cb_mean)/position_specifics_man_to_man_coverage_grade_cb_stdev as z_score_position_specifics_man_to_man_coverage_grade_cb
+		  ,(position_specifics_range_grade-position_specifics_range_grade_cb_mean)/position_specifics_range_grade_cb_stdev as z_score_position_specifics_range_grade_cb
+		  ,(position_specifics_run_support_tackling_grade-position_specifics_run_support_tackling_grade_cb_mean)/position_specifics_run_support_tackling_grade_cb_stdev as z_score_position_specifics_run_support_tackling_grade_cb
+		  ,(position_specifics_zone_coverage_grade-position_specifics_zone_coverage_grade_cb_mean)/position_specifics_zone_coverage_grade_cb_stdev as z_score_position_specifics_zone_coverage_grade_cb
+		  ,(position_specifics_special_teams_grade-position_specifics_special_teams_grade_cb_mean)/position_specifics_special_teams_grade_cb_stdev as z_score_position_specifics_special_teams_grade_cb
+	  INTO ##temp_grades_z_scores_all_cb
+      FROM ##temp_grades_cb corners
+INNER JOIN ##temp_grades_cb_means means
+		ON corners.position_text=means.position_text
+	
+-- Select the target player's corner grade z-scores into the empty variables
+    SELECT @main_player_z_score_athletic_ability_grade_cb = z_score_athletic_ability_grade_cb
+          ,@main_player_z_score_character_grade_cb = z_score_character_grade_cb
+          ,@main_player_z_score_competitiveness_grade_cb = z_score_competitiveness_grade_cb
+          ,@main_player_z_score_durability_grade_cb = z_score_durability_grade_cb
+          ,@main_player_z_score_explosion_grade_cb = z_score_explosion_grade_cb
+          ,@main_player_z_score_instinct_grade_cb = z_score_instinct_grade_cb
+          ,@main_player_z_score_playing_speed_grade_cb = z_score_playing_speed_grade_cb
+		  ,@main_player_z_score_size_grade_cb = z_score_size_grade_cb
+          ,@main_player_z_score_speed_grade_cb = z_score_speed_grade_cb
+          ,@main_player_z_score_toughness_grade_cb = z_score_toughness_grade_cb
+          ,@main_player_z_score_stic_index_cb = z_score_stic_index_cb
+          ,@main_player_z_score_pos_spec_close_on_ball_grade_cb = z_score_position_specifics_close_on_ball_grade_cb
+          ,@main_player_z_score_pos_spec_hands_grade_cb = z_score_position_specifics_hands_grade_cb
+          ,@main_player_z_score_pos_spec_key_and_diagnose_grade_cb = z_score_position_specifics_key_and_diagnose_grade_cb
+          ,@main_player_z_score_pos_spec_man_to_man_coverage_grade_cb = z_score_position_specifics_man_to_man_coverage_grade_cb
+          ,@main_player_z_score_pos_spec_range_grade_cb = z_score_position_specifics_range_grade_cb
+          ,@main_player_z_score_pos_spec_run_support_tackling_grade_cb = z_score_position_specifics_run_support_tackling_grade_cb
+          ,@main_player_z_score_pos_spec_zone_coverage_grade_cb = z_score_position_specifics_zone_coverage_grade_cb
+          ,@main_player_z_score_pos_spec_special_teams_grade_cb = z_score_position_specifics_special_teams_grade_cb
+		  ,@main_player_physical_alert_b_cb = physical_alert_b
+          ,@main_player_physical_alert_f_cb = physical_alert_f
+          ,@main_player_physical_alert_s_cb = physical_alert_s
+          ,@main_player_physical_alert_t_cb = physical_alert_t
+          ,@main_player_physical_alert_z_cb = physical_alert_z
+          ,@main_player_intangible_alert_a_cb = intangible_alert_a
+          ,@main_player_intangible_alert_c_cb = intangible_alert_c
+          ,@main_player_intangible_alert_d_cb = intangible_alert_d
+          ,@main_player_intangible_alert_e_cb = intangible_alert_e
+          ,@main_player_intangible_alert_m_cb = intangible_alert_m
+          ,@main_player_intangible_alert_o_cb = intangible_alert_o
+          ,@main_player_intangible_alert_p_cb = intangible_alert_p
+          ,@main_player_intangible_alert_u_cb = intangible_alert_u
+          ,@main_player_intangible_alert_x_cb = intangible_alert_x
+          ,@main_player_intangible_alert_k_cb = intangible_alert_k
+      FROM ##temp_grades_z_scores_all_cb
+	 WHERE player_id=@player_id
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- Create a table with the grades for all safeties
+    SELECT player_id
+		  ,first_name
+		  ,last_name
+          ,nfl_player_id
+          ,college_nfl_id
+		  ,scout_id
+	      ,athletic_ability_grade
+		  ,character_grade
+		  ,competitiveness_grade
+		  ,durability_grade
+		  ,explosion_grade
+		  ,instinct_grade
+		  ,playing_speed_grade
+		  ,position_specifics_close_on_ball_grade
+          ,position_specifics_hands_grade
+          ,position_specifics_key_and_diagnose_grade
+          ,position_specifics_man_to_man_coverage_grade
+          ,position_specifics_range_grade
+          ,position_specifics_run_support_tackling_grade
+          ,position_specifics_special_teams_grade
+          ,position_specifics_zone_coverage_grade
+		  ,size_grade
+          ,speed_grade
+          ,stic_index
+          ,toughness_grade
+		  ,CASE WHEN physical_alerts LIKE '%B%' OR physical_alerts LIKE '%b' THEN 1 ELSE 0 END AS physical_alert_b
+		  ,CASE WHEN physical_alerts LIKE '%F%' OR physical_alerts LIKE '%f' THEN 1 ELSE 0 END AS physical_alert_f
+		  ,CASE WHEN physical_alerts LIKE '%S%' OR physical_alerts LIKE '%s' THEN 1 ELSE 0 END AS physical_alert_s
+		  ,CASE WHEN physical_alerts LIKE '%T%' OR physical_alerts LIKE '%t' THEN 1 ELSE 0 END AS physical_alert_t
+		  ,CASE WHEN physical_alerts LIKE '%Z%' OR physical_alerts LIKE '%z' THEN 1 ELSE 0 END AS physical_alert_z
+		  ,CASE WHEN intangible_alerts LIKE '%A%' OR physical_alerts LIKE '%a' THEN 1 ELSE 0 END AS intangible_alert_a
+		  ,CASE WHEN intangible_alerts LIKE '%C%' OR physical_alerts LIKE '%c' THEN 1 ELSE 0 END AS intangible_alert_c
+		  ,CASE WHEN intangible_alerts LIKE '%D%' OR physical_alerts LIKE '%d' THEN 1 ELSE 0 END AS intangible_alert_d
+		  ,CASE WHEN intangible_alerts LIKE '%E%' OR physical_alerts LIKE '%e' THEN 1 ELSE 0 END AS intangible_alert_e
+		  ,CASE WHEN intangible_alerts LIKE '%M%' OR physical_alerts LIKE '%m' THEN 1 ELSE 0 END AS intangible_alert_m
+		  ,CASE WHEN intangible_alerts LIKE '%O%' OR physical_alerts LIKE '%o' THEN 1 ELSE 0 END AS intangible_alert_o
+		  ,CASE WHEN intangible_alerts LIKE '%P%' OR physical_alerts LIKE '%p' THEN 1 ELSE 0 END AS intangible_alert_p
+		  ,CASE WHEN intangible_alerts LIKE '%U%' OR physical_alerts LIKE '%u' THEN 1 ELSE 0 END AS intangible_alert_u
+		  ,CASE WHEN intangible_alerts LIKE '%X%' OR physical_alerts LIKE '%x' THEN 1 ELSE 0 END AS intangible_alert_x
+		  ,CASE WHEN intangible_alerts LIKE '%K%' OR physical_alerts LIKE '%k' THEN 1 ELSE 0 END AS intangible_alert_k
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_safety_reports def
+INNER JOIN RavensIncoming.dbo.stratbridge_players players
+		ON def.player_id=players.nfl_player_id
+     WHERE report_type in (1,3,4)
+
+
+
+
+
+
+
+
+
+
+
+-- now create a table that gets the difference between the main player and all other players (at his position only? or should we allow cross position comps?)
+-- Find the z-score differences between the target player and all other players
+    SELECT CollegePlayerID
+	      ,player_id
+	      ,GSISID
+	      ,first_name
+	      ,last_name
+	      ,nfl_position_id
+	      ,CASE WHEN @main_player_z_score_height IS NOT NULL THEN ABS(z_score_height-@main_player_z_score_height) ELSE NULL END AS z_score_height_difference
+		  ,CASE WHEN @main_player_z_score_weight IS NOT NULL THEN ABS(z_score_weight-@main_player_z_score_weight) ELSE NULL END AS z_score_weight_difference
+	      ,CASE WHEN @main_player_z_score_arm_length IS NOT NULL THEN ABS(z_score_arm_length-@main_player_z_score_arm_length) ELSE NULL END AS z_score_arm_length_difference
+		  ,CASE WHEN @main_player_z_score_hand_span IS NOT NULL THEN ABS(z_score_hand_span-@main_player_z_score_hand_span) ELSE NULL END AS z_score_hand_span_difference
+		  ,CASE WHEN @main_player_z_score_wing_span IS NOT NULL THEN ABS(z_score_wing_span-@main_player_z_score_wing_span) ELSE NULL END AS z_score_wing_span_difference
+		  ,CASE WHEN @main_player_z_score_test_correct IS NOT NULL THEN ABS(z_score_test_correct-@main_player_z_score_test_correct) ELSE NULL END AS z_score_test_correct_difference
+		  ,CASE WHEN @main_player_z_score_forty_yard_dash IS NOT NULL THEN ABS(z_score_forty_yard_dash-@main_player_z_score_forty_yard_dash) ELSE NULL END AS z_score_forty_yard_dash_difference
+		  ,CASE WHEN @main_player_z_score_twenty_yard_dash IS NOT NULL THEN ABS(z_score_twenty_yard_dash-@main_player_z_score_twenty_yard_dash) ELSE NULL END AS z_score_twenty_yard_dash_difference
+		  ,CASE WHEN @main_player_z_score_ten_yard_dash IS NOT NULL THEN ABS(z_score_ten_yard_dash-@main_player_z_score_ten_yard_dash) ELSE NULL END AS z_score_ten_yard_dash_difference
+		  ,CASE WHEN @main_player_z_score_bench_press_reps IS NOT NULL THEN ABS(z_score_bench_press_reps-@main_player_z_score_bench_press_reps) ELSE NULL END AS z_score_bench_press_reps_difference
+		  ,CASE WHEN @main_player_z_score_broad_jump IS NOT NULL THEN ABS(z_score_broad_jump-@main_player_z_score_broad_jump) ELSE NULL END AS z_score_broad_jump_difference
+		  ,CASE WHEN @main_player_z_score_three_cone IS NOT NULL THEN ABS(z_score_three_cone-@main_player_z_score_three_cone) ELSE NULL END AS z_score_three_cone_difference
+		  ,CASE WHEN @main_player_z_score_vertical_jump IS NOT NULL THEN ABS(z_score_vertical_jump-@main_player_z_score_vertical_jump) ELSE NULL END AS z_score_vertical_jump_difference
+		  ,CASE WHEN @main_player_z_score_short_shuttle IS NOT NULL THEN ABS(z_score_short_shuttle-@main_player_z_score_short_shuttle) ELSE NULL END AS z_score_short_shuttle_difference
+		  ,CASE WHEN @main_player_z_score_long_shuttle IS NOT NULL THEN ABS(z_score_long_shuttle-@main_player_z_score_long_shuttle) ELSE NULL END AS z_score_long_shuttle_difference
+		  ,CASE WHEN @main_player_z_score_long_snap IS NOT NULL THEN ABS(z_score_long_snap-@main_player_z_score_long_snap) ELSE NULL END AS z_score_long_snap_difference
+      FROM ##temp_measurables_z_scores_all
+	 WHERE player_id!=@player_id
+  
+
+
+
+
+
+
