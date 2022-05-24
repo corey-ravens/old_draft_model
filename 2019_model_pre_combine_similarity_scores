@@ -7,118 +7,6 @@ This is the code for combining the different Similar Players ("Comps") lists int
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Unpivot the Bill Lotter model comps list.
-
-OUTPUT TABLES:
-#temp_lotter_comps
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_lotter_comps exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_lotter_comps') IS NOT NULL
-	DROP TABLE #temp_lotter_comps
-
-    SELECT id_target AS target_bane_player_id
-		  ,comp_bane_player_id
-		  ,'overall_lotter' AS similarity_score_type
-		  ,CASE WHEN position = 'WO' THEN 'WR' ELSE position END AS position_translation
-		  ,NULL AS similarity_score
-		  ,CAST(REPLACE(similarity_score_rank,'id_comp','') AS INT) AS similarity_score_rank
-	  INTO #temp_lotter_comps
-      FROM AnalyticsWork.dbo.draft2017_bill_precombine_model_historical_comparables sel
-   UNPIVOT (comp_bane_player_id FOR similarity_score_rank IN (id_comp1, id_comp2, id_comp3, id_comp4, id_comp5, id_comp6, id_comp7, id_comp8, id_comp9, id_comp10)) AS unp
-   
-/*
-SELECT *
-FROM #temp_lotter_comps
-*/	
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the production comps list. Since they live in multiple tables, it takes multiple insert statements.
-
-OUTPUT TABLES:
-#temp_production_comps
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_production_comps exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_production_comps') IS NOT NULL
-	DROP TABLE #temp_production_comps
-
-    SELECT target_id AS target_bane_player_id
-		  ,bane_player_id AS comp_bane_player_id
-		  ,'production' AS similarity_score_type
-		  ,position_draft_board AS position_translation
-		  ,score_grades AS similarity_score
-		  ,RANK() OVER (PARTITION BY target_id ORDER BY score_grades) AS similarity_score_rank
-	  INTO #temp_production_comps
-      FROM AnalyticsWork.dbo.draft2017_production_model_comps_def
-
-INSERT INTO #temp_production_comps
-    SELECT target_id AS target_bane_player_id
-		  ,bane_player_id AS comp_bane_player_id
-		  ,'production' AS similarity_score_type
-		  ,position_draft_board AS position_translation
-		  ,score_grades AS similarity_score
-		  ,RANK() OVER (PARTITION BY target_id ORDER BY score_grades) AS similarity_score_rank
-      FROM AnalyticsWork.dbo.draft2017_production_model_comps_oline
-
-INSERT INTO #temp_production_comps
-    SELECT target_id AS target_bane_player_id
-		  ,bane_player_id AS comp_bane_player_id
-		  ,'production' AS similarity_score_type
-		  ,CASE WHEN position_draft_board = 'WO' THEN 'WR' ELSE position_draft_board END AS position_translation
-		  ,score_grades AS similarity_score
-		  ,RANK() OVER (PARTITION BY target_id ORDER BY score_grades) AS similarity_score_rank
-      FROM AnalyticsWork.dbo.draft2017_production_model_comps_oskill
-
-INSERT INTO #temp_production_comps
-    SELECT target_id AS target_bane_player_id
-		  ,bane_player_id AS comp_bane_player_id
-		  ,'production' AS similarity_score_type
-		  ,position_draft_board AS position_translation
-		  ,score_grades AS similarity_score
-		  ,RANK() OVER (PARTITION BY target_id ORDER BY score_grades) AS similarity_score_rank
-      FROM AnalyticsWork.dbo.draft2017_production_model_comps_qb
-
-/*
-SELECT *
-FROM #temp_production_comps
-WHERE target_bane_player_id = 68548
-*/	
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the measurables comp list.
-
-OUTPUT TABLES:
-#temp_measurables_comps
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_measurables_comps exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_measurables_comps') IS NOT NULL
-	DROP TABLE #temp_measurables_comps
-
-    SELECT target_bane_player_id
-		  ,comp_bane_player_id
-		  ,'measurables' AS similarity_score_type
-		  ,position AS position_translation
-		  ,similarity_score
-		  ,similarity_score_rank
-	  INTO #temp_measurables_comps
-      FROM Analytics.dbo.r_output_draft_model_pre_combine_measurables_sim_scores
-	 WHERE similarity_score_type = 'pro_grade'
-
-/*
-SELECT *
-FROM #temp_measurables_comps
-WHERE target_bane_player_id = 68548
-*/
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -139,13 +27,16 @@ IF OBJECT_ID('tempdb..#temp_overall_comps') IS NOT NULL
 		  ,CASE WHEN position_draft_board = 'WO' THEN 'WR' ELSE position_draft_board END AS position_translation
 		  ,score_combined AS similarity_score
 		  ,RANK() OVER (PARTITION BY target_bane_player_id ORDER BY score_combined) AS similarity_score_rank
+		  ,RANK() OVER (PARTITION BY target_bane_player_id, CASE WHEN position_draft_board = 'WO' THEN 'WR' ELSE position_draft_board END ORDER BY score_combined) AS similarity_score_rank_position
+		  ,2019 AS draft_model_year
 	  INTO #temp_overall_comps
-      FROM AnalyticsWork.dbo.draft2017_precombine_model_comps
+      FROM AnalyticsWork.dbo.draft_model_pre_combine_overall_sim_scores
+	  WHERE model_type = 'PMC'
 
 /*
 SELECT *
 FROM #temp_overall_comps
-WHERE target_bane_player_id = 68548
+WHERE target_bane_player_id = 86614
 */
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -157,24 +48,15 @@ Analytics.dbo.analysis_players_draft_model_similarity_scores
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-TRUNCATE TABLE Analytics.dbo.analysis_players_draft_model_similarity_scores
+--DELETE FROM Analytics.dbo.analysis_players_draft_model_similarity_scores WHERE draft_model_year = 2019
 
 INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
-    SELECT *
-      FROM #temp_lotter_comps
-	 WHERE similarity_score_rank <= 10
-
-INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
-    SELECT *
-      FROM #temp_production_comps
-	 WHERE similarity_score_rank <= 10
-
-INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
-    SELECT *
-      FROM #temp_measurables_comps
-	 WHERE similarity_score_rank <= 10
-
-INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
-    SELECT *
-      FROM #temp_overall_comps
-	 WHERE similarity_score_rank <= 10
+	SELECT target_bane_player_id
+		,comp_bane_player_id
+		,similarity_score_type
+		,position_translation
+		,similarity_score
+		,similarity_score_rank_position AS similarity_score_rank
+		,draft_model_year
+	FROM #temp_overall_comps
+	WHERE similarity_score_rank_position <= 10
