@@ -8,7 +8,7 @@ This is the code for creating the advanced measurables.
 It also finds similar players because many of the advanced
 measurables are used in the SimScore model.
 
-v10 eliminated player measurables that came from regional combines and workouts after their draft year.
+v11 added adjustment for non combine times
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -94,7 +94,21 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 		        ELSE re.id 
 		   END AS reliability_id
 		  ,me.order_by AS attempt
-		  ,me.value
+		  --,me.value AS value_original
+		  ,CASE WHEN mt.code='40YTime' THEN 
+					CASE WHEN (re.id IN (4,5) OR (re.id IS NULL AND wt.[type] IN ('RCOM','ALLS','APT','SRCO','PDAY','LW','PW'))) THEN 0.03113 + 1.00245*value
+						 ELSE value
+					END
+				WHEN mt.code='20YTime' THEN 
+					CASE WHEN (re.id IN (4,5) OR (re.id IS NULL AND wt.[type] IN ('RCOM','ALLS','APT','SRCO','PDAY','LW','PW'))) THEN 0.26234 + 0.89282*value
+						 ELSE value
+					END
+				WHEN mt.code='10YTime' THEN 
+					CASE WHEN (re.id IN (4,5) OR (re.id IS NULL AND wt.[type] IN ('RCOM','ALLS','APT','SRCO','PDAY','LW','PW'))) THEN 0.25743 + 0.85147*value
+						 ELSE value
+					END
+				ELSE value
+		   END AS value
 	  INTO ##temp_measurables_master
       FROM [bane_production_analytics].[dbo].[workouts] wo
  LEFT JOIN [bane_production_analytics].[dbo].[measurables] me
@@ -117,7 +131,7 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 		  ,me.measurable_type_id
 		  ,re.id
 
---SELECT * FROM ##temp_measurables_master where player_id=607
+--SELECT * FROM ##temp_measurables_master where code='10YTime'
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2994,6 +3008,7 @@ grades that are based just on training camp, like:
 Report Month in (7,8)
 AND team=BLT OR (team=SF AND Report Year = 2014) OR (team=PHI AND Report Year = 2015)
 
+
 OUTPUT TABLES:
 ##temp_pro_grades_season_tier_mean
 
@@ -3057,6 +3072,9 @@ Join the season pro grades to the player advanced measurables
 table.  Remember, there is a row for every player for each of
 his first 4 seasons.
 
+Since we only modeled Pro Grades back to 2009, limit your pool to only 2006 Draft and
+Beyond (because those guys will have at least one grade, from their 4th season).
+
 OUTPUT TABLES:
 ##temp_measurables_with_pro_grades
 
@@ -3101,9 +3119,10 @@ INNER JOIN [bane_production_analytics].[dbo].[players] pl
  LEFT JOIN ##temp_draft_board_positions_with_order dbg
         ON me.player_id = dbg.player_id
 		AND dbg.draft_board_position_order = 1
-	 WHERE (player_season_in_league <=4
+	 WHERE nfl_entry_year >= 2006 and nfl_entry_year < 2016
+	   AND ((player_season_in_league <=4
 	   AND player_season_in_league !=0)
-	    OR player_season_in_league IS NULL
+	    OR player_season_in_league IS NULL)
 
 --SELECT * FROM ##temp_measurables_with_pro_grades
 
@@ -3121,6 +3140,129 @@ INNER JOIN [bane_production_analytics].[dbo].[players] pl
 
 
 
+
+select distinct m.player_id
+      ,p1.nfl_entry_year as first_season
+	  ,p2.nfl_entry_year+1 as second_season
+	  ,p3.nfl_entry_year+2 as third_season
+	  ,p4.nfl_entry_year+3 as fourth_season
+into ##temp_seasons
+from AnalyticsWork.dbo.measurables_with_grades_post062 m
+inner join [bane_production_analytics].[dbo].[players] p1
+on m.player_id=p1.id
+inner join [bane_production_analytics].[dbo].[players] p2
+on p1.id=p2.id
+inner join [bane_production_analytics].[dbo].[players] p3
+on p1.id=p3.id
+inner join [bane_production_analytics].[dbo].[players] p4
+on p1.id=p4.id
+order by m.player_id
+
+select * from ##temp_seasons where player_id=10828
+
+
+	SELECT player_id
+		  ,me.season
+	  into ##temp_seasons_unpivot
+      FROM ##temp_seasons
+   UNPIVOT (season FOR code IN (first_season, second_season, third_season, fourth_season
+							   )) AS me
+
+select * from ##temp_seasons_unpivot where player_id=10828
+
+select distinct u.player_id
+		  ,position_draft_board
+          ,acceleration_forty_best_value
+          ,acceleration_ten_best_value
+          ,acceleration_twenty_best_value
+          ,arm_length_best_value
+          ,arm_length_z_score_best_value
+          ,arm_radius_best_value
+          ,bench_reps_best_value
+          ,bench_work_joules_best_value
+          ,bench_work_joules_z_score_best_value
+          ,body_mass_index_best_value
+          ,dash_forty_best_value
+          ,dash_forty_z_score_best_value
+          ,dash_ten_best_value
+          ,dash_ten_z_score_best_value
+          ,dash_twenty_best_value
+          ,dash_twenty_z_score_best_value
+          ,explosion_index_best_value
+          ,explosion_lower_best_value
+          ,flying_ten_best_value
+          ,flying_ten_z_score_best_value
+          ,flying_twenty_best_value
+          ,flying_twenty_z_score_best_value
+          ,hand_size_best_value
+          ,hand_size_z_score_best_value
+          ,height_best_value
+          ,height_z_score_best_value
+          ,jump_broad_best_value
+          ,jump_broad_power_sandy_best_value
+          ,jump_broad_z_score_best_value
+          ,jump_combined_best_value
+          ,jump_vertical_best_value
+          ,jump_vertical_power_best_value
+          ,jump_vertical_power_kubiak_best_value
+          ,jump_vertical_power_spags_best_value
+          ,jump_vertical_z_score_best_value
+		  ,lateral_agility_score_best_value
+          ,length_vertical_best_value
+          ,length_vertical_with_jump_best_value
+          ,momentum_forty_best_value
+          ,momentum_ten_best_value
+          ,momentum_twenty_best_value
+          ,power_forty_best_value
+          ,power_ten_best_value
+          ,power_twenty_best_value
+          ,ratio_arm_to_height_best_value
+          ,ratio_wing_to_height_best_value
+          ,shuttle_long_best_value
+          ,shuttle_long_z_score_best_value
+          ,shuttle_short_best_value
+          ,shuttle_short_z_score_best_value
+          ,speed_score_adjusted_best_value
+          ,speed_score_barnwell_best_value
+          ,speed_score_cohen_best_value
+          ,test_score_best_value
+          ,test_score_z_score_best_value
+          ,three_cone_best_value
+          ,three_cone_z_score_best_value
+          ,velocity_forty_best_value
+          ,velocity_ten_best_value
+          ,velocity_twenty_best_value
+          ,weight_best_value
+          ,weight_z_score_best_value
+          ,wingspan_best_value
+          ,wingspan_z_score_best_value
+          ,work_forty_sandy_best_value
+          ,work_ten_sandy_best_value
+          ,work_twenty_sandy_best_value
+		  ,u.season
+into ##temp_list
+from ##temp_seasons_unpivot u
+left join AnalyticsWork.dbo.measurables_with_grades_post062 m
+on u.player_id=m.player_id
+where u.season<=2015
+
+
+
+select l.*
+,coalesce(cast(grade_scaled as float),50) as grade_scaled
+--into ##temp_all
+from ##temp_list l
+left join AnalyticsWork.dbo.measurables_with_grades_post062 m
+on m.player_id=l.player_id
+and m.report_season=l.season
+
+select Player_id, count(player_id) as pcount into ##temp_check from ##temp_all a 
+group by player_id
+
+select c.*, nfl_entry_year from ##temp_check c inner join [bane_production_analytics].[dbo].[players] p1
+on c.player_id=p1.id
+
+select * from [bane_production_analytics].[dbo].[players] p1 where last_name='Kindle' and first_name='Sergio'
 
 
 
