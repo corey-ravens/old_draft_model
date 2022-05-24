@@ -1,0 +1,126 @@
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for updating the draft model grades table for players. It adds to the existing table
+when you have a new draft model year, version, or type.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Take the max grades and numbers to remove duplicates.
+
+OUTPUT TABLES:
+#temp_draft_model_pre_combine_overall_scores
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_draft_model_pre_combine_overall_scores exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_model_pre_combine_overall_scores') IS NOT NULL
+	DROP TABLE #temp_draft_model_pre_combine_overall_scores
+
+	SELECT [bane_player_id]
+		,[position_draft_board]
+		,secondary_position
+		,[draft_model_year]
+		,MAX([production_number]) AS production_number
+		,MAX([measurables_number]) AS measurables_number
+		,MAX([grades_number]) AS grades_number
+		,MAX([overall_number]) AS final_pmc_number
+		,MAX(CASE WHEN [production_grade] IN ('6.4','6.2') THEN [production_grade] ELSE [production_grade] END) AS production_grade
+		,MAX(CASE WHEN [measurables_grade] IN ('6.4','6.2') THEN [measurables_grade] ELSE [measurables_grade] END) AS measurables_grade
+		,MAX(CASE WHEN [grades_grade] IN ('6.4','6.2') THEN [grades_grade] ELSE [grades_grade] END) AS grades_grade
+		,MAX(CASE WHEN [overall_grade] IN ('6.4','6.2') THEN [overall_grade] ELSE [overall_grade] END) AS final_pmc_salaries_grade
+		,MAX([overall_percentile]) AS final_pmc_percentile
+		,MAX([production_percentile]) AS production_percentile
+		,MAX([measurables_percentile]) AS measurables_percentile
+		,MAX([grades_percentile]) AS grades_percentile
+	INTO #temp_draft_model_pre_combine_overall_scores
+	FROM [AnalyticsWork].[dbo].[draft_model_pre_combine_overall_scores]
+	WHERE model_type = 'PMC'
+	GROUP BY [bane_player_id]
+		,[position_draft_board]
+		,secondary_position
+		,[draft_model_year]
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Join to the grades tables so you can get grade ids and put into the same format as the existing 
+draft model grades table.
+
+OUTPUT TABLES:
+#temp_draft_model_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_draft_model_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_model_grades') IS NOT NULL
+	DROP TABLE #temp_draft_model_grades
+	
+	SELECT [bane_player_id]
+		,position_draft_board AS position
+		,[secondary_position]
+		,2019 AS [draft_model_year]
+		,'PRE_COMBINE' AS [draft_model_version]
+		,'SALARIES' AS [draft_model_type]
+		,[measurables_number]
+		,[measurables_percentile]
+		,grm.id AS [measurables_grade_id]
+		,grades_number AS [component_grades_number]
+		,grades_percentile AS [component_grades_percentile]
+		,grr.id AS [component_grades_grade_id]
+		,[production_number]
+		,[production_percentile]
+		,grp.id AS [production_grade_id]
+		,final_pmc_number AS [model_without_board_score]
+		,grl.id AS [model_without_board_grade_id]
+		,NULL AS [model_with_external_score]
+		,NULL AS [model_with_external_grade_id]
+		,NULL AS [model_with_board_score]
+		,NULL AS [model_with_board_grade_id]
+	INTO #temp_draft_model_grades
+	FROM #temp_draft_model_pre_combine_overall_scores mo
+	LEFT JOIN BaneProductionAnalytics.dbo.grades grp
+		ON CASE WHEN mo.production_grade IN ('8','7','6') THEN CONCAT(mo.production_grade,'.0') ELSE mo.production_grade END = grp.value
+		AND grp.scale_id = 4
+		--AND grp.active = 1
+		AND grp.[name] NOT LIKE '%Specialist%'
+	LEFT JOIN BaneProductionAnalytics.dbo.grades grm
+		ON CASE WHEN mo.measurables_grade IN ('8','7','6') THEN CONCAT(mo.measurables_grade,'.0') ELSE mo.measurables_grade END = grm.value
+		AND grm.scale_id = 4
+		--AND grm.active = 1
+		AND grm.[name] NOT LIKE '%Specialist%'
+	LEFT JOIN BaneProductionAnalytics.dbo.grades grr
+		ON CASE WHEN mo.grades_grade IN ('8','7','6') THEN CONCAT(mo.grades_grade,'.0') ELSE mo.grades_grade END = grr.value
+		AND grr.scale_id = 4
+		--AND grr.active = 1
+		AND grr.[name] NOT LIKE '%Specialist%'
+	LEFT JOIN BaneProductionAnalytics.dbo.grades grl
+		ON CASE WHEN mo.final_pmc_salaries_grade IN ('8','7','6') THEN CONCAT(mo.final_pmc_salaries_grade,'.0') ELSE mo.final_pmc_salaries_grade END = grl.value
+	   AND grl.scale_id = 4
+	   --AND grl.active = 1
+	   AND grl.[name] NOT LIKE '%Specialist%'
+	WHERE draft_model_year = 2019 
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Update the analysis table where the grades are stored.
+
+OUTPUT TABLES:
+Analytics.dbo.analysis_players_draft_model_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+DELETE FROM Analytics.dbo.analysis_players_draft_model_grades
+WHERE draft_model_year = 2019
+	AND draft_model_version = 'PRE_COMBINE'
+	AND draft_model_type = 'SALARIES'
+
+INSERT INTO Analytics.dbo.analysis_players_draft_model_grades
+	SELECT *
+	FROM #temp_draft_model_grades
+
