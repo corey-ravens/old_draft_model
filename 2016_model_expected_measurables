@@ -1,23 +1,68 @@
+/*---------------------------------------------------------------------
+
+Here you are finding out if a player has measurables from a workout or 
+pro day, as we want to prioritize those measrables over all others for
+our models
+
+----------------------------------------------------------------------*/
+
+-- Check if temp_workouts_and_measurables exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_combine_or_pro_day') IS NOT NULL
+	DROP TABLE ##temp_combine_or_pro_day
+
+    SELECT [player_id]
+		  ,CASE WHEN MIN([priority]) IN (1,2) THEN 1 ELSE 0 END AS combine_or_pro_day
+      INTO ##temp_combine_or_pro_day
+      FROM [bane-development].[dbo].[workouts] workouts
+INNER JOIN [bane-development].[dbo].[player_workout_types] workout_types
+        ON workouts.player_workout_type_id=workout_types.id 
+  GROUP BY [player_id]
+  
+
+/*---------------------------------------------------------------------
+
+Next you join players, workouts, and measurables to have all the needed
+data in one place.  While doing this, you assign all the different NFL 
+position IDs into groups that match as closely as possible to our Draft 
+Board positions.  
+
+----------------------------------------------------------------------*/
+
 -- Check if temp_workouts_and_measurables exists, if it does drop it
 IF OBJECT_ID('tempdb..##temp_workouts_and_measurables') IS NOT NULL
 	DROP TABLE ##temp_workouts_and_measurables
 
-    SELECT [player_id]
+    SELECT workouts.[player_id]
 	      ,players.[first_name]
 		  ,players.[last_name]
-		  ,CASE WHEN [position_id] IN (7,13,27,37) THEN 27
-		        WHEN [position_id] IN (8,12,28) THEN 28
-				WHEN [position_id] IN (9,16,41) THEN 9
-				WHEN [position_id] IN (10,33,36) THEN 10
-				WHEN [position_id] IN (11,29,31,32,39) THEN 29
-				WHEN [position_id] IN (17,18,34,14,15,30) THEN 30
-				WHEN [position_id] IN (20,40) THEN 20
-				WHEN [position_id] IN (19,35) THEN 19
-				WHEN [position_id] IN (24,25,26) THEN 24
-				ELSE [position_id]
-				END AS position_id_group
+		  ,CASE WHEN [position] IS NOT NULL THEN CASE WHEN [position] IN ('FS','SS') THEN 'DS' 
+													  WHEN [position] IN ('RUSH','SAM') THEN 'OB34'
+													  ELSE [position]
+													  END
+			    ELSE CASE WHEN [position_id] = 1 THEN 'QB'
+				          WHEN [position_id] = 2 THEN 'WO'
+						  WHEN [position_id] = 3 THEN 'TE'
+						  WHEN [position_id] = 4 THEN 'OH'
+						  WHEN [position_id] = 5 THEN 'FB'
+						  WHEN [position_id] = 6 THEN 'OC'
+						  WHEN [position_id] IN (7,13,27) THEN 'OG'
+						  WHEN [position_id] IN (8,12,28) THEN 'OT'
+						  WHEN [position_id] IN (9,16,41) THEN 'DC'
+						  WHEN [position_id] IN (10,33,36) THEN 'DS' 
+						  WHEN [position_id] IN (11,29,31,39) THEN 'IB'
+						  WHEN [position_id] IN (14,15,30,32) THEN 'OB34'
+						  WHEN [position_id] IN (17,18,34) THEN 'DE34'
+						  WHEN [position_id] IN (19,20,35,40) THEN 'DT34'
+						  WHEN [position_id] = 21 THEN 'LS'
+						  WHEN [position_id] = 22 THEN 'PT'
+						  WHEN [position_id] = 23 THEN 'PK'
+						  END
+				END AS [position]
 		  ,players.[draft_year]
+		  ,[grade_pro]
 		  ,workouts.[id] AS workout_id
+		  ,[priority]
+		  ,COALESCE([combine_or_pro_day],0) AS combine_or_pro_day
 		  ,[measurable_type_id]
 		  ,[code]
           ,[value]
@@ -31,17 +76,36 @@ INNER JOIN [bane-development].[dbo].[measurable_types] measurable_types
         ON measurables.measurable_type_id=measurable_types.id
 INNER JOIN [bane-development].[dbo].[players] players
         ON players.id=workouts.player_id
+ LEFT JOIN ##temp_combine_or_pro_day combpro
+		ON workouts.player_id=combpro.player_id
+ LEFT JOIN [AnalyticsWork].[dbo].[corey_grades] grades
+		ON players.nfl_id=grades.player_nfl_id
+LEFT JOIN [AnalyticsWork].[dbo].[corey_positions] corey_pos
+		ON grades.position_id_draft_board=corey_pos.position_id_draft_board
      WHERE workout_types.[priority] < 11
+	   AND [draft_year]>=2005
+
+
+/*---------------------------------------------------------------------
+
+Next you pivot the measurables so you have one row for every workout 
+that contains all measurables for that workout 
+
+----------------------------------------------------------------------*/
 
 -- Check if temp_workouts_and_measurables_pivot exists, if it does drop it
 IF OBJECT_ID('tempdb..##temp_workouts_and_measurables_pivot') IS NOT NULL
 	DROP TABLE ##temp_workouts_and_measurables_pivot
 
-    SELECT [player_id]
-	      ,Abs(Checksum(NewId())) % 10 AS random_number
-		  ,position_id_group
+    SELECT [position]
+		  ,[player_id]
+		  ,[first_name]
+		  ,[last_name]
 		  ,[draft_year]
+		  ,[grade_pro]
 		  ,[workout_id]
+		  ,[priority]
+		  ,[combine_or_pro_day]
 	      ,HgtCnv AS height_converted
 	      ,Wgt AS weight
 	      ,ArmLngCnv AS arm_length_converted
@@ -56,44 +120,124 @@ IF OBJECT_ID('tempdb..##temp_workouts_and_measurables_pivot') IS NOT NULL
 	      ,[3Cone] AS three_cone
 	      ,[60YShuttle] AS long_shuttle
 	      ,StrengthReps225 AS bench_reps
-	  --INTO ##temp_workouts_and_measurables_pivot
+	  INTO ##temp_workouts_and_measurables_pivot
       FROM (
-    SELECT [player_id]
-	      ,position_id_group
+    SELECT [position]
+		  ,[player_id]
+		  ,[first_name]
+		  ,[last_name]
 		  ,[draft_year]
+		  ,[grade_pro]
 		  ,[workout_id]
+		  ,[priority]
+		  ,[combine_or_pro_day]
 		  ,[code]
 		  ,[value]
       FROM ##temp_workouts_and_measurables) up
      PIVOT (MAX(value) FOR [code] IN (HgtCnv, Wgt, ArmLngCnv, WSpanCnv, HSpanCnv, [40YTime], [20YTime], [10YTime], VertJumpCnv, BroadJumpCnv, [20YShuttle], [3Cone], [60YShuttle], StrengthReps225)) AS pvt
-  ORDER BY [player_id]
-		  ,position_id_group
-          ,[random_number]
+  ORDER BY [position]
+		  ,[player_id]
+		  ,[first_name]
+		  ,[last_name]
 		  ,[draft_year]
 		  ,[workout_id]
 
 
+/*---------------------------------------------------------------------
+
+Next you create the 40 yard dash analysis dataset.  Add a random number
+so you can create training, validation, and scoring sets from the main 
+dataset.  The nested queries in the where clause make sure you choose
+the workout with the player's LOWEST 40 Time - if he has a time from 
+the combine or a pro day, then take his lowest time of those two,
+otherwise take the lowest time from the other workout types.  You don't
+want to just create a "best of" record, you want to know the size of a 
+player when he ran that specific time.
+
+----------------------------------------------------------------------*/
+
+-- Check if temp_forty_analysis_dataset exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_forty_analysis_dataset') IS NOT NULL
+	DROP TABLE ##temp_forty_analysis_dataset
+
+    SELECT [position]
+		  ,[player_id]
+		  ,[first_name]
+		  ,[last_name]
+	      ,CASE WHEN [draft_year]=2015 THEN 9 ELSE Abs(Checksum(NewId())) % 9 END AS random_number
+		  ,[draft_year]
+		  ,CASE WHEN [grade_pro] = 8 THEN 50
+		        WHEN [grade_pro] = 7 THEN 20
+				WHEN [grade_pro] = 6.9 THEN 10
+				WHEN [grade_pro] = 6.7 THEN 7.69
+				WHEN [grade_pro] = 6.5 THEN 6.25
+				WHEN [grade_pro] = 6.3 THEN 5
+				WHEN [grade_pro] = 6.1 THEN 2.5
+				WHEN [grade_pro] = 6.0 THEN 3.33
+				WHEN [grade_pro] = 5.9 THEN 1.82
+				WHEN [grade_pro] = 5.8 THEN 1.33
+				WHEN [grade_pro] = 5.7 THEN 1.11
+				ELSE 0
+			END AS [grade_pro]
+		  ,[workout_id]
+		  ,[priority]
+		  ,[combine_or_pro_day]
+		  ,[height_converted] AS height
+		  ,POWER([height_converted],2) AS height_squared
+		  ,[weight]
+		  ,POWER([weight],2) AS weight_squared
+		  ,[arm_length_converted] AS arm_length
+		  ,POWER([weight],2) AS arm_length_squared
+		  ,[forty_time]
+		  ,CASE 
+			    WHEN [position] = 'DE34' THEN 6.91790807040027+[weight]*0.0037258765035867+[height_converted]*-0.038427131688523
+				WHEN [position] = 'DT34' THEN 3.89995832664482+[weight]*0.00436123060805146
+				WHEN [position] = 'IB' THEN 7.4279665147007+[weight]*0.00488722373056161+[height_converted]*-0.0510263501183082
+				WHEN [position] = 'OB34' THEN 4.52533265504633+[weight]*0.00389865909449176+[height_converted]*-0.00961380589246248
+				WHEN [position] = 'OC' THEN 17.46045704+[weight]*-0.0653398375932231+POWER([weight],2)*0.00012383375583564+[height_converted]*-0.0497850391482204
+				WHEN [position] = 'OH' THEN 8.27691870407392+[weight]*-0.0376408335705+POWER([weight],2)*0.0000962886332424687
+				WHEN [position] = 'OT' THEN 16.3449523873533+[weight]*-0.0608795046261064+POWER([weight],2)*0.000109452826440493+[height_converted]*-0.0346837244622585
+				WHEN [position] = 'TE' THEN 8.76525941597924+[weight]*-0.0376603452727531+POWER([weight],2)*0.0000877036861069619
+			END AS projected_forty_time
+		  ,CASE 
+			    WHEN [position] = 'DE34' THEN [forty_time]-(6.91790807040027+[weight]*0.0037258765035867+[height_converted]*-0.038427131688523)
+				WHEN [position] = 'DT34' THEN [forty_time]-(3.89995832664482+[weight]*0.00436123060805146)
+				WHEN [position] = 'IB' THEN [forty_time]-(7.4279665147007+[weight]*0.00488722373056161+[height_converted]*-0.0510263501183082)
+				WHEN [position] = 'OB34' THEN [forty_time]-(4.52533265504633+[weight]*0.00389865909449176+[height_converted]*-0.00961380589246248)
+				WHEN [position] = 'OC' THEN [forty_time]-(17.46045704+[weight]*-0.0653398375932231+POWER([weight],2)*0.00012383375583564+[height_converted]*-0.0497850391482204)
+				WHEN [position] = 'OH' THEN [forty_time]-(8.27691870407392+[weight]*-0.0376408335705+POWER([weight],2)*0.0000962886332424687)
+				WHEN [position] = 'OT' THEN [forty_time]-(16.3449523873533+[weight]*-0.0608795046261064+POWER([weight],2)*0.000109452826440493+[height_converted]*-0.0346837244622585)
+				WHEN [position] = 'TE' THEN [forty_time]-(8.76525941597924+[weight]*-0.0376603452727531+POWER([weight],2)*0.0000877036861069619)
+			END AS forty_differential
+	  --INTO ##temp_forty_analysis_dataset
+      FROM ##temp_workouts_and_measurables_pivot workout1
+	 WHERE [forty_time] = (SELECT MIN([forty_time])
+							 FROM ##temp_workouts_and_measurables_pivot workout2 
+							WHERE workout1.[player_id]=workout2.[player_id]
+							  AND workout2.combine_or_pro_day=(SELECT MAX([combine_or_pro_day])
+																 FROM ##temp_workouts_and_measurables_pivot workout3
+																WHERE workout2.[player_id]=workout3.[player_id]
+															 GROUP BY workout3.[player_id])
+						 GROUP BY workout2.player_id)
+	  AND [position] NOT IN ('LS','PT','PK')
+  ORDER BY [position]
 
 
+/*---------------------------------------------------------------------
 
+Separate out the full 40 analysis dataset into training, validation, 
+and scoring datasets.
 
+----------------------------------------------------------------------*/
 
-
-
-
-
-
-
-
-
-    SELECT *
-	  FROM ##temp_workouts_and_measurables_pivot
+	SELECT *
+	  FROM ##temp_forty_analysis_dataset
 	 WHERE random_number <= 6
 
     SELECT *
-	  FROM ##temp_workouts_and_measurables_pivot
+	  FROM ##temp_forty_analysis_dataset
 	 WHERE random_number IN (7,8)
 
     SELECT *
-	  FROM ##temp_workouts_and_measurables_pivot
+	  FROM ##temp_forty_analysis_dataset
 	 WHERE random_number = 9
