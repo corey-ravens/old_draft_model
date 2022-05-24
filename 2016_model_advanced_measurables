@@ -1,64 +1,436 @@
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for creating the advanced measurables.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the master measurables table
+
+OUTPUT TABLES:
+##temp_measurables_master
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
 -- Check if temp_all_measurables exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_all_measurables') IS NOT NULL
-	DROP TABLE ##temp_all_measurables
+IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
+	DROP TABLE ##temp_measurables_master
 
-    SELECT workouts.id AS workout_id
-	      ,workouts.[date] as workout_date
-		  ,workouts.[description] as workout_description
-	      ,workouts.player_id
-		  ,workouts.nfl_player_id
-		  ,workouts.college_player_id
-		  ,measurables.measurable_type_id
-		  ,meastypes.code
-		  ,measurables.value
-	  INTO ##temp_all_measurables
-      FROM [bane-development].[dbo].[workouts] workouts
-INNER JOIN [bane-development].[dbo].[measurables] measurables
-        ON workouts.id=measurables.workout_id
-INNER JOIN [bane-development].[dbo].[measurable_types] meastypes
-		ON measurables.measurable_type_id=meastypes.id
-INNER JOIN [bane-development].[dbo].[player_workout_types] worktype
-		ON workouts.player_workout_type_id=worktype.id
-	 WHERE worktype.[priority]<=10
+    SELECT wo.id AS workout_id
+	      ,wo.[date] AS workout_date
+		  ,wo.[description] AS workout_description
+		  ,wt.[type] AS workout_type
+	      ,wo.player_id
+		  ,wo.nfl_player_id
+		  ,wo.college_player_id
+		  ,me.measurable_type_id
+		  ,mt.code
+		  ,re.id AS reliability_id
+		  ,re.[description] AS reliabilty_description
+		  ,re.translation
+		  ,me.order_by AS attempt
+		  ,me.value
+	  INTO ##temp_measurables_master
+      FROM [bane_production_analytics].[dbo].[workouts] wo
+ LEFT JOIN [bane_production_analytics].[dbo].[measurables] me
+        ON wo.id=me.workout_id
+ LEFT JOIN [bane_production_analytics].[dbo].[measurable_types] mt
+		ON me.measurable_type_id=mt.id
+ LEFT JOIN [bane_production_analytics].[dbo].[player_workout_types] wt
+		ON wo.player_workout_type_id=wt.id
+ LEFT JOIN [bane_production_analytics].[dbo].[reliabilities] re
+		ON me.reliability_id=re.id
+	 WHERE (re.translation IN ('I','V','W') OR wt.[type] IN ('COMB'))
+	   AND NOT (wt.[type] = 'RPT' AND re.translation = 'I')
+  ORDER BY wo.player_id
+          ,wo.id
+		  ,me.measurable_type_id
+		  ,re.id
 
--- Check if temp_all_measurables_pivot exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_all_measurables_pivot') IS NOT NULL
-	DROP TABLE ##temp_all_measurables_pivot
+--SELECT * FROM ##temp_measurables_master WHERE workout_id = 541913
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Pivot the 40, 20, and 10 Times so you can get Flying 10 and 20
+from the same run.  You want to avoid taking his best 40, and
+his best 20 from different runs to calculate his best flying 20.
+
+OUTPUT TABLES:
+##temp_dashes_pivot
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+-- Check if ##temp_dashes_pivot exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_dashes_pivot') IS NOT NULL
+	DROP TABLE ##temp_dashes_pivot
 
     SELECT workout_id
-		  ,workout_date
+	      ,workout_date
 		  ,workout_description
+		  ,workout_type
 	      ,player_id
-	      ,HgtCnv AS height_converted
-	      ,Wgt AS weight
-	      ,ArmLngCnv AS arm_length_converted
-	      ,WSpanCnv AS wing_span_converted
-	      ,HSpanCnv AS hand_span_converted
+		  ,nfl_player_id
+		  ,college_player_id
+		  ,reliability_id
+		  ,reliabilty_description
+		  ,translation
+		  ,attempt
 	      ,[40YTime] AS forty_time
 	      ,[20YTime] AS twenty_time
 	      ,[10YTime] AS ten_time
-	      ,VertJumpCnv AS vertical_jump_converted
-	      ,BroadJumpCnv AS broad_jump_converted
-	      ,[20YShuttle] AS short_shuttle
-	      ,[3Cone] AS three_cone
-	      ,[60YShuttle] AS long_shuttle
-	      ,StrengthReps225 AS bench_reps
-	  --INTO ##temp_all_measurables_pivot
+	  INTO ##temp_dashes_pivot
       FROM (
     SELECT workout_id
+	      ,workout_date
+		  ,workout_description
+		  ,workout_type
 	      ,player_id
+		  ,nfl_player_id
+		  ,college_player_id
+		  ,code
+		  ,reliability_id
+		  ,reliabilty_description
+		  ,translation
+		  ,attempt
+		  ,value
+      FROM ##temp_measurables_master) up
+     PIVOT (MIN(value) FOR code IN ([40YTime], [20YTime], [10YTime])) AS pvt
+	 WHERE reliability_id IS NOT NULL
+  ORDER BY player_id, workout_id
+
+--select * from ##temp_dashes_pivot 
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the Flying 10 and 20 Time Variables
+
+OUTPUT TABLES:
+##temp_dashes_flying_ten
+##temp_dashes_flying_twenty
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+-- Check if ##temp_dashes_flying_ten exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_dashes_flying_ten') IS NOT NULL
+	DROP TABLE ##temp_dashes_flying_ten
+
+    SELECT workout_id
+	      ,workout_date
+		  ,workout_description
+		  ,workout_type
+	      ,player_id
+		  ,nfl_player_id
+		  ,college_player_id
+		  ,NULL AS measurable_type_id
+		  ,'Flying10Time' AS code
+		  ,reliability_id
+		  ,reliabilty_description
+		  ,NULL AS translation
+		  ,attempt
+	      ,(twenty_time-ten_time) AS value
+	  INTO ##temp_dashes_flying_ten
+      FROM ##temp_dashes_pivot
+	 WHERE twenty_time IS NOT NULL
+	   AND ten_time IS NOT NULL
+  ORDER BY player_id, workout_id
+
+  --select * from ##temp_dashes_flying_ten
+
+
+-- Check if ##temp_dashes_flying_twenty exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_dashes_flying_twenty') IS NOT NULL
+	DROP TABLE ##temp_dashes_flying_twenty
+
+    SELECT workout_id
+	      ,workout_date
+		  ,workout_description
+		  ,workout_type
+	      ,player_id
+		  ,nfl_player_id
+		  ,college_player_id
+		  ,NULL AS measurable_type_id
+		  ,'Flying20Time' AS code
+		  ,reliability_id
+		  ,reliabilty_description
+		  ,NULL AS translation
+		  ,attempt
+	      ,(forty_time-twenty_time) AS value
+	  INTO ##temp_dashes_flying_twenty
+      FROM ##temp_dashes_pivot
+	 WHERE twenty_time IS NOT NULL
+	   AND forty_time IS NOT NULL
+  ORDER BY player_id, workout_id
+
+--select * from ##temp_dashes_flying_twenty
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Append the Flying 10 and 20 to the master measurables table.
+
+OUTPUT TABLES:
+##temp_measurables_master
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+INSERT INTO ##temp_measurables_master
+	SELECT *
+	  FROM ##temp_dashes_flying_ten
+
+INSERT INTO ##temp_measurables_master
+	SELECT *
+	  FROM ##temp_dashes_flying_twenty
+
+--SELECT * FROM ##temp_measurables_master
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Order his individual workout times so you get the best time from
+a given workout
+
+OUTPUT TABLES:
+##temp_measurables_with_order
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+-- Check if ##temp_measurables_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_measurables_with_order') IS NOT NULL
+	DROP TABLE ##temp_measurables_with_order
+
+    SELECT *
+		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time') THEN RANK() OVER (PARTITION BY workout_id, code ORDER BY reliability_id, value, attempt DESC)
+		        ELSE RANK() OVER (PARTITION BY workout_id, code ORDER BY reliability_id, value DESC, attempt DESC)
+		   END AS measurable_order
+      INTO ##temp_measurables_with_order
+      FROM ##temp_measurables_master
+  ORDER BY player_id
+          ,workout_id
+		  ,code
+
+--SELECT * FROM ##temp_measurables_with_order
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the Run Measurables Table. Because these are 
+bucketed by weight include the weight too. We want to make
+sure the weight and 40 measurements come from the same workout.
+
+Because we aren't as interested the actual time as his time/weight z score, 
+we want the lowest of those, not necessarily the lowest raw time.
+
+OUTPUT TABLES:
+##temp_runs_master
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+-- Check if ##temp_runs_master exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_runs_master') IS NOT NULL
+	DROP TABLE ##temp_runs_master
+
+    SELECT player_id
+	      ,workout_id
+		  ,workout_type
+	      ,Wgt AS [weight]
+	      ,[40YTime] AS forty_time
+	      ,[20YTime] AS twenty_time
+	      ,[10YTime] AS ten_time
+		  ,[20YShuttle] AS short_shuttle_time
+		  ,[3Cone] AS three_cone_time
+		  ,[60YShuttle] AS long_shuttle_time
+		  ,[Flying10Time] AS flying_ten_time
+		  ,[Flying20Time] AS flying_twenty_time
+		  --the other run drills
+	  INTO ##temp_runs_master
+      FROM (
+    SELECT player_id
+	      ,workout_id
+		  ,workout_type
+		  ,measurable_order
 		  ,code
 		  ,value
-      FROM ##temp_all_measurables) up
-     PIVOT (MAX(value) FOR code IN (HgtCnv, Wgt, ArmLngCnv, WSpanCnv, HSpanCnv, [40YTime], [20YTime], [10YTime], VertJumpCnv, BroadJumpCnv, [20YShuttle], [3Cone], [60YShuttle], StrengthReps225)) AS pvt
-  ORDER BY workout_id, player_id
+      FROM ##temp_measurables_with_order) up
+     PIVOT (MIN(value) FOR code IN ([Wgt], [40YTime], [20YTime], [10YTime], [20YShuttle], [3Cone], [60YShuttle], [Flying10Time], [Flying20Time])) AS pvt
+	 WHERE measurable_order=1
+  ORDER BY player_id, workout_id
+
+ --SELECT * FROM ##temp_runs_master
+  
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the mean and standard deviations for each weight bucket.
+For the dashes, the buckets are 5 pounds wide, for the shuttles
+and cone drill they are 7 pounds wide.
+
+Instead of just creating a 5 pound bucket that each weight falls into,
+for every individual weight create a bucket that includes the 2 pounds
+above and below.
+
+OUTPUT TABLES:
+##temp_runs_avg_stdev
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_runs_avg_stdev exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_runs_avg_stdev') IS NOT NULL
+	DROP TABLE ##temp_runs_avg_stdev
+
+    SELECT DISTINCT r1.[weight]
+-----------Forty Yard Dash
+	      ,CASE WHEN r1.[weight] < 154 OR r1.[weight] > 348 THEN NULL
+		        ELSE (SELECT AVG(forty_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS forty_time_mean
+	      ,CASE WHEN r1.[weight] < 154 OR r1.[weight] > 348 THEN NULL
+		        ELSE (SELECT STDEVP(forty_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS forty_time_stdev
+-----------Twenty Yard Dash
+	      ,CASE WHEN r1.[weight] < 154 OR r1.[weight] > 346 THEN NULL
+		        ELSE (SELECT AVG(twenty_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS twenty_time_mean
+	      ,CASE WHEN r1.[weight] < 154 OR r1.[weight] > 346 THEN NULL
+		        ELSE (SELECT STDEVP(twenty_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS twenty_time_stdev
+-----------Ten Yard Dash
+	      ,CASE WHEN r1.[weight] < 161 OR r1.[weight] > 346 THEN NULL
+		        ELSE (SELECT AVG(ten_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS ten_time_mean
+	      ,CASE WHEN r1.[weight] < 161 OR r1.[weight] > 346 THEN NULL
+		        ELSE (SELECT STDEVP(ten_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS ten_time_stdev
+-----------Flying 10
+	      ,CASE WHEN r1.[weight] < 161 OR r1.[weight] > 346 THEN NULL
+		        ELSE (SELECT AVG(flying_ten_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS flying_ten_time_mean
+	      ,CASE WHEN r1.[weight] < 161 OR r1.[weight] > 346 THEN NULL
+		        ELSE (SELECT STDEVP(flying_ten_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS flying_ten_time_stdev
+-----------Flying 20
+	      ,CASE WHEN r1.[weight] < 161 OR r1.[weight] > 346 THEN NULL
+		        ELSE (SELECT AVG(flying_twenty_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS flying_twenty_time_mean
+	      ,CASE WHEN r1.[weight] < 161 OR r1.[weight] > 346 THEN NULL
+		        ELSE (SELECT STDEVP(flying_twenty_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2) 
+		   END AS flying_twenty_time_stdev
+-----------Long Shuttle
+	      ,CASE WHEN r1.[weight] < 179 OR r1.[weight] > 268 THEN NULL
+		        ELSE (SELECT AVG(long_shuttle_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3) 
+		   END AS long_shuttle_time_mean
+	      ,CASE WHEN r1.[weight] < 179 OR r1.[weight] > 268 THEN NULL
+		        ELSE (SELECT STDEVP(long_shuttle_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3) 
+		   END AS long_shuttle_time_stdev
+-----------Short Shuttle
+	      ,CASE WHEN r1.[weight] < 178 OR r1.[weight] > 336 THEN NULL
+		        ELSE (SELECT AVG(short_shuttle_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3) 
+		   END AS short_shuttle_time_mean
+	      ,CASE WHEN r1.[weight] < 178 OR r1.[weight] > 336 THEN NULL
+		        ELSE (SELECT STDEVP(short_shuttle_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3) 
+		   END AS short_shuttle_time_stdev
+-----------Three Cone
+	      ,CASE WHEN r1.[weight] < 177 OR r1.[weight] > 335 THEN NULL
+		        ELSE (SELECT AVG(three_cone_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3) 
+		   END AS three_cone_time_mean
+	      ,CASE WHEN r1.[weight] < 177 OR r1.[weight] > 335 THEN NULL
+		        ELSE (SELECT STDEVP(three_cone_time) FROM ##temp_runs_master r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3) 
+		   END AS three_cone_time_stdev
+	  INTO ##temp_runs_avg_stdev
+      FROM ##temp_runs_master r1
+	 WHERE r1.[weight] >= 140
+	   AND r1.[weight] <= 400
+  ORDER BY r1.[weight]
+
+--SELECT * FROM ##temp_runs_avg_stdev
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the z scores for the 40/20/10 yard dashes.
+
+OUTPUT TABLES:
+##temp_runs_with_z
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_runs_with_z exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_runs_with_z') IS NOT NULL
+	DROP TABLE ##temp_runs_with_z
+
+    SELECT player_id
+	      ,workout_id
+		  ,workout_type
+	      ,av.[weight]
+	      ,forty_time
+		  ,(forty_time - forty_time_mean) / forty_time_stdev AS forty_time_z_score
+	      ,twenty_time
+		  ,(twenty_time - twenty_time_mean) / twenty_time_stdev AS twenty_time_z_score
+	      ,ten_time
+		  ,(ten_time - ten_time_mean) / ten_time_stdev AS ten_time_z_score
+	  INTO ##temp_runs_with_z 
+	  FROM ##temp_runs_avg_stdev av
+INNER JOIN ##temp_runs_master ma
+        ON av.[weight] = ma.[weight]
+
+--SELECT * FROM ##temp_runs_with_z WHERE player_id = 34960
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the table with each player's best dash z scores.
+
+OUTPUT TABLES:
+##temp_dashes_best
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_dashes_best exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_dashes_best') IS NOT NULL
+	DROP TABLE ##temp_dashes_best
+
+    SELECT player_id
+		  ,MIN(forty_time_z_score) AS forty_time_z_score_best
+	      ,MIN(twenty_time_z_score) AS twenty_time_z_score_best
+	      ,MIN(ten_time_z_score) AS ten_time_z_score_best
+	  INTO ##temp_dashes_best
+	  FROM ##temp_runs_with_z
+  GROUP BY player_id
+
+SELECT * FROM ##temp_dashes_best WHERE player_id = 34960
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
 
   -- Check if temp_all_measurables_pivot_with_extras exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_all_measurables_pivot_with_extras') IS NOT NULL
-	DROP TABLE ##temp_all_measurables_pivot_with_extras
+IF OBJECT_ID('tempdb..##temp_measurables_master_pivot_with_extras') IS NOT NULL
+	DROP TABLE ##temp_measurables_master_pivot_with_extras
 
     SELECT workout_id
 	      ,player_id
@@ -69,6 +441,9 @@ IF OBJECT_ID('tempdb..##temp_all_measurables_pivot_with_extras') IS NOT NULL
           ,(vertical_jump_converted+3.5*broad_jump_converted)*([weight]/height_converted)/3000 AS lower_explosion
           ,forty_time-twenty_time AS flying_twenty_time
           ,twenty_time-ten_time AS flying_ten_time
+		  ,(forty_time+ten_time+short_shuttle+three_cone) AS edge_rusher_speed_cohen
+		  ,(broad_jump_converted+vertical_jump_converted+bench_reps) AS edge_rusher_power_cohen
+
           --for below equation, 225 lbs = 100 kg , 9.8 m/s is the force of gravity, 0.0254 inches in a meter
           ,((100*9.8)/(arm_length_converted*0.0254))*bench_reps AS bench_work_joules
           --divide the above by the time it takes him to do his reps to get bench_watts (not jj)
@@ -114,5 +489,5 @@ IF OBJECT_ID('tempdb..##temp_all_measurables_pivot_with_extras') IS NOT NULL
 		  ,730*[weight]/height_converted AS body_mass_index
 		  --haven't been able to figure out the exact SPARQ formula yet, this is a "best guess" based on other efforts to nail down the formula
 		  ,161.1768022+([weight]*0.3114693)+(forty_time*-10.72725617)+(ten_time*-41.89231102)+(short_shuttle*-16.15717599)+(three_cone*-6.981575131)+(bench_reps*0.477821711)+(vertical_jump_converted*1.266893465)+(broad_jump_converted/12*6.691568906) as sparq_estimate
-	     INTO ##temp_all_measurables_pivot_with_extras
-         FROM ##temp_all_measurables_pivot
+	     INTO ##temp_measurables_master_pivot_with_extras
+         FROM ##temp_measurables_master_pivot
