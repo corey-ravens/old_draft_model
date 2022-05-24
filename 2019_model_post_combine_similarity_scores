@@ -5,26 +5,9 @@
 
 This is the code for combining the different Similar Players ("Comps") lists into one table for display on BANE.
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Find the primary position so you know what comparable players rows to exclude.
-
-OUTPUT TABLES:
-#temp_primary_position
+v2 is for 2018
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_primary_position exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_primary_position') IS NOT NULL
-	DROP TABLE #temp_primary_position
-
-    SELECT DISTINCT bane_player_id
-		  ,position
-	  INTO #temp_primary_position
-      FROM Analytics.dbo.r_input_draft_model_post_combine_measurables
-     WHERE season_in_league = 1
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -43,25 +26,20 @@ IF OBJECT_ID('tempdb..#temp_overall_comps') IS NOT NULL
     SELECT target_bane_player_id
 		  ,comp_bane_player_id
 		  ,'overall' AS similarity_score_type
-		  ,CASE WHEN position_draft_board = 'WO' THEN 'WR'
-				WHEN position_draft_board = 'OH' THEN 'RB'
-		        ELSE position_draft_board
-		   END AS position_translation
-		  ,score_combined * 10 AS similarity_score
+		  ,CASE WHEN position_draft_board = 'WO' THEN 'WR' ELSE position_draft_board END AS position_translation
+		  ,score_combined AS similarity_score
 		  ,RANK() OVER (PARTITION BY target_bane_player_id ORDER BY score_combined) AS similarity_score_rank
+		  ,RANK() OVER (PARTITION BY target_bane_player_id, CASE WHEN position_draft_board = 'WO' THEN 'WR' ELSE position_draft_board END ORDER BY score_combined) AS similarity_score_rank_position
+		  ,2019 AS draft_model_year
 	  INTO #temp_overall_comps
-      FROM AnalyticsWork.dbo.draft2017_post_combine_model_comps_PMCG com
-INNER JOIN #temp_primary_position pp
-		ON com.target_bane_player_id = pp.bane_player_id
-	   AND CASE WHEN position_draft_board = 'WO' THEN 'WR' 
-	            WHEN position_draft_board = 'OH' THEN 'RB'
-				ELSE position_draft_board
-		   END = pp.position
- 
+      FROM AnalyticsWork.dbo.draft_model_post_combine_overall_sim_scores
+	  WHERE model_type = 'PMCG'
+		AND score_combined IS NOT NULL
+
 /*
 SELECT *
 FROM #temp_overall_comps
-WHERE target_bane_player_id = 76347
+WHERE target_bane_player_id = 86614
 */
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -76,8 +54,12 @@ Analytics.dbo.analysis_players_draft_model_similarity_scores
 TRUNCATE TABLE Analytics.dbo.analysis_players_draft_model_similarity_scores
 
 INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
-    SELECT *
-      FROM #temp_overall_comps
-	 WHERE similarity_score_rank <= 10
-
-
+	SELECT target_bane_player_id
+		,comp_bane_player_id
+		,similarity_score_type
+		,position_translation
+		,similarity_score
+		,similarity_score_rank_position AS similarity_score_rank
+		,draft_model_year
+	FROM #temp_overall_comps
+	WHERE similarity_score_rank_position <= 10
