@@ -8,7 +8,7 @@ This is the code for creating the advanced measurables.
 It also finds similar players because many of the advanced
 measurables are used in the SimScore model.
 
-v11 added adjustment for non combine times
+v13 goes to expected times and jumps
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -36,7 +36,7 @@ IF OBJECT_ID('tempdb..##temp_draft_board_positions') IS NOT NULL
 				ELSE NULL
 		   END AS order_by
 	 INTO ##temp_draft_board_positions
-	 FROM [bane_production_analytics].[dbo].[draft_board_grades]
+	 FROM [BaneProductionAnalytics].[dbo].[draft_board_grades]
 	WHERE position != '' AND position IS NOT NULL
 
 
@@ -96,8 +96,8 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 		        ELSE re.id 
 		   END AS reliability_id
 		  ,me.order_by AS attempt
-		  --,me.value AS value_original
-		  ,CASE WHEN mt.code='40YTime' THEN 
+		  ,me.value AS value
+		  /*,CASE WHEN mt.code='40YTime' THEN 
 					CASE WHEN (re.id IN (4,5) OR (re.id IS NULL AND wt.[type] IN ('RCOM','ALLS','APT','SRCO','PDAY','LW','PW'))) THEN 0.03113 + 1.00245*value
 						 ELSE value
 					END
@@ -111,18 +111,18 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 						 ELSE value
 					END
 				ELSE value
-		   END AS value
+		   END AS value_adjusted*/
 	  INTO ##temp_measurables_master
-      FROM [bane_production_analytics].[dbo].[workouts] wo
- LEFT JOIN [bane_production_analytics].[dbo].[measurables] me
+      FROM [BaneProductionAnalytics].[dbo].[workouts] wo
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[measurables] me
         ON wo.id=me.workout_id
- LEFT JOIN [bane_production_analytics].[dbo].[measurable_types] mt
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[measurable_types] mt
 		ON me.measurable_type_id=mt.id
- LEFT JOIN [bane_production_analytics].[dbo].[player_workout_types] wt
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[player_workout_types] wt
 		ON wo.player_workout_type_id=wt.id
- LEFT JOIN [bane_production_analytics].[dbo].[reliabilities] re
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[reliabilities] re
 		ON me.reliability_id=re.id
- LEFT JOIN [bane_production_analytics].[dbo].[players] pl
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[players] pl
 		ON wo.player_id=pl.id
 	 WHERE (re.translation IN ('I','V','W') OR wt.[type] IN ('COMB','RCOM','ALLS','APT','SRCO','PDAY','LW','PW'))
 	   AND NOT (wt.[type] = 'RPT' AND re.translation = 'I')
@@ -136,21 +136,30 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 
 --SELECT * FROM ##temp_measurables_master where player_id = 47610 
 
-/*
+
 
 UPDATE ##temp_measurables_master
 SET value = NULL
 WHERE 
 code='HgtCnv'
-and attempt=1
-and workout_id IN (547502,592015,397108,601729,396168,547881,397493,396965,601729)
+--and attempt=1
+and workout_id IN (547502,592015,397108,601729,396168,547881,397493,396965,601729,601574,396312)
 
 UPDATE ##temp_measurables_master
 SET value = NULL
 WHERE 
 code='Wgt'
-and attempt=1
+--and attempt=1
 and workout_id IN (396965,397493,396312,395490,542143,398131,396312)
+
+
+UPDATE ##temp_measurables_master
+SET value = NULL
+WHERE 
+code='WSpanCnv'
+--and attempt=1
+and workout_id IN (601024,603980)
+
 
 UPDATE ##temp_measurables_master
 SET value = NULL
@@ -164,7 +173,8 @@ SET value = NULL
 WHERE 
 code='20YTime'
 --and attempt=1
-and workout_id IN (395822,408102,403926)
+and (workout_id IN (395822,408102,403926,403457) OR (workout_id=602136 AND attempt=3))
+
 
 UPDATE ##temp_measurables_master
 SET value = NULL
@@ -191,9 +201,9 @@ UPDATE ##temp_measurables_master
 SET value = NULL
 WHERE 
 code='VertJumpCnv'
-and workout_id IN (396586)
+and workout_id IN (396586,396591)
 
-*/
+
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -350,59 +360,36 @@ IF OBJECT_ID('tempdb..##temp_advanced_pivot') IS NOT NULL
 Create a temp table for each of the measurables. By doing it
 this way you can have a normalized table in the end.
 
-For the variables that pull from multiple different drills
-(like Lateral Agility Score using 40 and Shuttle) just use
-the overall MIN or MAX without regard for Electronic or 
-Handheld.  Because the drills are timed by hand, we decided
-to allow the use of hand timed 40 for consistency.  Also, 
-all of these default to 1 for the "attempt" variable.
+Create a table with a player's actual vs expected, as well as a 
+table with his actual vs expected as a percentage of expected.
 
-If you decide to change this in the future (or if they start 
-timing the drills electronically) you will have to add
-reliability as a variable in those tables.
-
-
-CONVERSIONS & EQUATIONS TO NOTE:
-1 pound = 0.453595 kilograms
-1 yard = 0.9144 meters
-s = v0t + 1/2at^2
 
 OUTPUT TABLES:
 ##temp_flyings_ten
 ##temp_flyings_twenty
-##temp_accelerations_ten
-##temp_accelerations_twenty
-##temp_accelerations_forty
-##temp_velocities_ten
-##temp_velocities_twenty
-##temp_velocities_forty
-##temp_momentums_ten
-##temp_momentums_twenty
-##temp_momentums_forty
-##temp_works_ten_sandy
-##temp_works_twenty_sandy
-##temp_works_forty_sandy
-##temp_powers_ten
-##temp_powers_twenty
-##temp_powers_forty
-##temp_speed_scores_barnwell
-##temp_speed_scores_adjusted
-##temp_lateral_agility_scores
-##temp_speed_scores_cohen
-##temp_explosions_index
-##temp_explosions_lower
-##temp_benches_work
-##temp_verticals_power
-##temp_verticals_power_kubiak
-##temp_verticals_power_spags
-##temp_broads_power_sandy
-##temp_jumps_combined
-##temp_lengths_vertical
-##temp_lengths_vertical_with_jump
-##temp_ratios_arm_to_height
-##temp_ratios_wing_to_height
-##temp_radius_arms
-##temp_body_mass_indices
+##temp_expecteds_forty
+##temp_expecteds_forty_pct
+##temp_expecteds_twenty
+##temp_expecteds_twenty_pct
+##temp_expecteds_ten
+##temp_expecteds_ten_pct
+##temp_expecteds_flyings_twenty
+##temp_expecteds_flyings_twenty_pct
+##temp_expecteds_flyings_ten
+##temp_expecteds_flyings_ten_pct
+##temp_expecteds_shuttle_short
+##temp_expecteds_shuttle_short_pct
+##temp_expecteds_shuttle_long
+##temp_expecteds_shuttle_long_pct
+##temp_expecteds_three_cone
+##temp_expecteds_three_cone_pct
+##temp_expecteds_jump_vertical
+##temp_expecteds_jump_vertical_pct
+##temp_expecteds_jump_broad
+##temp_expecteds_jump_broad_pct
+##temp_expecteds_bench_reps
+##temp_expecteds_bench_reps_pct
+
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -456,947 +443,674 @@ IF OBJECT_ID('tempdb..##temp_flyings_twenty') IS NOT NULL
 
 --SELECT * FROM ##temp_flyings_twenty
 
+
 /*-------------------------------
-Acceleration at 10
+Expected 40
 -------------------------------*/
 
--- Check if ##temp_accelerations_ten exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_accelerations_ten') IS NOT NULL
-	DROP TABLE ##temp_accelerations_ten
+-- Check if ##temp_expecteds_forty exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_forty') IS NOT NULL
+	DROP TABLE ##temp_expecteds_forty
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'Acceleration10' AS code
+		  ,'BelowExpected40' AS code
 		  ,reliability_id
 		  ,attempt
-	      ,2*(10*0.9144)/POWER(dash_ten,2) AS value
-	  INTO ##temp_accelerations_ten
+	      ,CASE WHEN workout_type_for_models = 1 THEN dash_forty - (4.533 + [weight]*-0.003697 + POWER([weight],2)*0.00001894)
+		        WHEN workout_type_for_models = 3 THEN dash_forty - (4.465 + [weight]*-0.003427 + POWER([weight],2)*0.00001838)
+				WHEN workout_type_for_models = 4 THEN dash_forty - (4.678 + [weight]*-0.004928 + POWER([weight],2)*0.00002090)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_forty
       FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_accelerations_ten
-
-/*-------------------------------
-Acceleration at 20
--------------------------------*/
-
--- Check if ##temp_accelerations_twenty exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_accelerations_twenty') IS NOT NULL
-	DROP TABLE ##temp_accelerations_twenty
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Acceleration20' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/POWER((dash_twenty-dash_ten),2) AS value
-	  INTO ##temp_accelerations_twenty
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND dash_twenty IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_accelerations_twenty
-
-/*-------------------------------
-Acceleration at 40
--------------------------------*/
-
--- Check if ##temp_accelerations_forty exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_accelerations_forty') IS NOT NULL
-	DROP TABLE ##temp_accelerations_forty
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Acceleration40' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,2*(20-(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)))/POWER(dash_forty-dash_twenty,2) AS value
-	  INTO ##temp_accelerations_forty
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND dash_twenty IS NOT NULL
-	   AND dash_forty IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_accelerations_forty
-
-/*-------------------------------
-Velocity 10
--------------------------------*/
-
--- Check if ##temp_velocities_ten exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_velocities_ten') IS NOT NULL
-	DROP TABLE ##temp_velocities_ten
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Velocity10' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,2*(10*0.9144)/dash_ten AS value
-	  INTO ##temp_velocities_ten
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_velocities_ten
-
-/*-------------------------------
-Velocity 20
--------------------------------*/
-
--- Check if ##temp_velocities_twenty exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_velocities_twenty') IS NOT NULL
-	DROP TABLE ##temp_velocities_twenty
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Velocity20' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)/dash_ten AS value
-	  INTO ##temp_velocities_twenty
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND dash_twenty IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_velocities_twenty
-
-/*-------------------------------
-Velocity 40
--------------------------------*/
-
--- Check if ##temp_velocities_forty exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_velocities_forty') IS NOT NULL
-	DROP TABLE ##temp_velocities_forty
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Velocity40' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,2*(20-(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)))/(dash_forty-dash_twenty) AS value
-	  INTO ##temp_velocities_forty
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND dash_twenty IS NOT NULL
-	   AND dash_forty IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_velocities_forty
-
-/*-------------------------------
-Momentum 10
-Momentum is mass times velocity
--------------------------------*/
-
--- Check if ##temp_momentums_ten exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_momentums_ten') IS NOT NULL
-	DROP TABLE ##temp_momentums_ten
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Momentum10' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,([weight]*0.453595)*(2*(10*0.9144)/dash_ten) AS value
-	  INTO ##temp_momentums_ten
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
+	 WHERE dash_forty IS NOT NULL
 	   AND [weight] IS NOT NULL
   ORDER BY workout_id
 
---SELECT * FROM ##temp_momentums_ten
+--select * from ##temp_expecteds_forty
+
 
 /*-------------------------------
-Momentum 20
-Momentum is mass times velocity
+Expected 40 Percentage
 -------------------------------*/
 
--- Check if ##temp_momentums_twenty exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_momentums_twenty') IS NOT NULL
-	DROP TABLE ##temp_momentums_twenty
+-- Check if ##temp_expecteds_forty_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_forty_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_forty_pct
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'Momentum20' AS code
+		  ,'BelowExpected40Pct' AS code
 		  ,reliability_id
 		  ,attempt
-	      ,([weight]*0.453595)*(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)) AS value
-	  INTO ##temp_momentums_twenty
+	      ,CASE WHEN workout_type_for_models = 1 THEN (dash_forty - (4.533 + [weight]*-0.003697 + POWER([weight],2)*0.00001894)) / (4.533 + [weight]*-0.003697 + POWER([weight],2)*0.00001894)
+		        WHEN workout_type_for_models = 3 THEN (dash_forty - (4.465 + [weight]*-0.003427 + POWER([weight],2)*0.00001838)) / (4.465 + [weight]*-0.003427 + POWER([weight],2)*0.00001838)
+				WHEN workout_type_for_models = 4 THEN (dash_forty - (4.678 + [weight]*-0.004928 + POWER([weight],2)*0.00002090)) / (4.678 + [weight]*-0.004928 + POWER([weight],2)*0.00002090)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_forty_pct
       FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND dash_twenty IS NOT NULL
+	 WHERE dash_forty IS NOT NULL
 	   AND [weight] IS NOT NULL
   ORDER BY workout_id
 
---SELECT * FROM ##temp_momentums_twenty
+  --select * from ##temp_expecteds_forty_pct
+
 
 /*-------------------------------
-Momentum 40
-Momentum is mass times velocity
+Expected 20
 -------------------------------*/
 
--- Check if ##temp_momentums_forty exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_momentums_forty') IS NOT NULL
-	DROP TABLE ##temp_momentums_forty
+-- Check if ##temp_expecteds_twenty exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_twenty') IS NOT NULL
+	DROP TABLE ##temp_expecteds_twenty
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'Momentum40' AS code
+		  ,'BelowExpected20' AS code
 		  ,reliability_id
 		  ,attempt
-	      ,([weight]*0.453595)*(2*(20-(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)))/(dash_forty-dash_twenty)) AS value
-	  INTO ##temp_momentums_forty
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND dash_twenty IS NOT NULL
-	   AND dash_forty IS NOT NULL
-	   AND [weight] IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_momentums_forty
-
-/*-------------------------------
-Work 10
-(Sandy Version)
-Work is force times distance
-Force is mass times acceleration  
--------------------------------*/
-
--- Check if ##temp_works_ten_sandy exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_works_ten_sandy') IS NOT NULL
-	DROP TABLE ##temp_works_ten_sandy
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Work10Sandy' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,([weight]*0.453595)*POWER((2*(10*0.9144)/dash_ten),2)*10 AS value
-	  INTO ##temp_works_ten_sandy
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND [weight] IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_works_ten_sandy
-
-/*-------------------------------
-Work 20
-(Sandy Version)
-(This is actually the work done between 10 and 20, not just the work done overall from 0 to 20)
-Work is force times distance
-Force is mass times acceleration  
--------------------------------*/
-
--- Check if ##temp_works_twenty_sandy exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_works_twenty_sandy') IS NOT NULL
-	DROP TABLE ##temp_works_twenty_sandy
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Work20Sandy' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,([weight]*0.453595)*(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/POWER((dash_twenty-dash_ten),2))*10 AS value
-	  INTO ##temp_works_twenty_sandy
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND dash_twenty IS NOT NULL
-	   AND [weight] IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_works_twenty_sandy
-
-/*-------------------------------
-Work 40
-(Sandy Version)
-(This is actually the work done between 20 and 40, not just the work done overall from 0 to 40)
-Work is force times distance
-Force is mass times acceleration  
--------------------------------*/
-
--- Check if ##temp_works_forty_sandy exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_works_forty_sandy') IS NOT NULL
-	DROP TABLE ##temp_works_forty_sandy
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Work40Sandy' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,([weight]*0.453595)*(2*(20-(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)))/POWER(dash_forty-dash_twenty,2))*20 AS value
-	  INTO ##temp_works_forty_sandy
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND dash_twenty IS NOT NULL
-	   AND dash_forty IS NOT NULL
-	   AND [weight] IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_works_forty_sandy
-
-/*-------------------------------
-Power 10
-Power is work over time 
--------------------------------*/
-
--- Check if ##temp_powers_ten exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_powers_ten') IS NOT NULL
-	DROP TABLE ##temp_powers_ten
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Power10' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,(([weight]*0.453595)*(10*0.9144))/dash_ten AS value
-	  INTO ##temp_powers_ten
-      FROM ##temp_advanced_pivot
-	 WHERE dash_ten IS NOT NULL
-	   AND [weight] IS NOT NULL
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_powers_ten
-
-/*-------------------------------
-Power 20
-Power is work over time 
--------------------------------*/
-
--- Check if ##temp_powers_twenty exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_powers_twenty') IS NOT NULL
-	DROP TABLE ##temp_powers_twenty
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'Power20' AS code
-		  ,reliability_id
-		  ,attempt
-	      ,(([weight]*0.453595)*(20*0.9144))/dash_twenty AS value
-	  INTO ##temp_powers_twenty
+	      ,CASE WHEN workout_type_for_models = 1 THEN dash_twenty - (2.609 + [weight]*-0.001984 + POWER([weight],2)*0.00001041)
+		        WHEN workout_type_for_models = 3 THEN dash_twenty - (2.588 + [weight]*-0.002071 + POWER([weight],2)*0.00001052)
+				WHEN workout_type_for_models = 4 THEN dash_twenty - (2.788 + [weight]*-0.003426 + POWER([weight],2)*0.00001304)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_twenty
       FROM ##temp_advanced_pivot
 	 WHERE dash_twenty IS NOT NULL
 	   AND [weight] IS NOT NULL
   ORDER BY workout_id
 
---SELECT * FROM ##temp_powers_twenty
+--select * from ##temp_expecteds_twenty
+
 
 /*-------------------------------
-Power 40
-Power is work over time 
+Expected 20 Percent
 -------------------------------*/
 
--- Check if ##temp_powers_forty exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_powers_forty') IS NOT NULL
-	DROP TABLE ##temp_powers_forty
+-- Check if ##temp_expecteds_twenty_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_twenty_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_twenty_pct
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'Power40' AS code
+		  ,'BelowExpected20Pct' AS code
 		  ,reliability_id
 		  ,attempt
-	      ,(([weight]*0.453595)*(40*0.9144))/dash_forty AS value
-	  INTO ##temp_powers_forty
+	      ,CASE WHEN workout_type_for_models = 1 THEN (dash_twenty - (2.609 + [weight]*-0.001984 + POWER([weight],2)*0.00001041)) / (2.609 + [weight]*-0.001984 + POWER([weight],2)*0.00001041)
+		        WHEN workout_type_for_models = 3 THEN (dash_twenty - (2.588 + [weight]*-0.002071 + POWER([weight],2)*0.00001052)) / (2.588 + [weight]*-0.002071 + POWER([weight],2)*0.00001052)
+				WHEN workout_type_for_models = 4 THEN (dash_twenty - (2.788 + [weight]*-0.003426 + POWER([weight],2)*0.00001304)) / (2.788 + [weight]*-0.003426 + POWER([weight],2)*0.00001304)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_twenty_pct
       FROM ##temp_advanced_pivot
-	 WHERE dash_forty IS NOT NULL
+	 WHERE dash_twenty IS NOT NULL
 	   AND [weight] IS NOT NULL
   ORDER BY workout_id
 
---SELECT * FROM ##temp_powers_forty
+--select * from ##temp_expecteds_twenty_pct
+
 
 /*-------------------------------
-Speed Score Barnwell
+Expected 10
 -------------------------------*/
 
--- Check if ##temp_speed_scores_barnwell exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_speed_scores_barnwell') IS NOT NULL
-	DROP TABLE ##temp_speed_scores_barnwell
+-- Check if ##temp_expecteds_ten exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_ten') IS NOT NULL
+	DROP TABLE ##temp_expecteds_ten
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'SpeedScoreBarnwell' AS code
+		  ,'BelowExpected10' AS code
 		  ,reliability_id
 		  ,attempt
-	      ,([weight]*200)/POWER(dash_forty,4) AS value
-	  INTO ##temp_speed_scores_barnwell
+	      ,CASE WHEN workout_type_for_models = 1 THEN dash_ten - (1.656 + [weight]*-0.001855 + POWER([weight],2)*0.000007444)
+		        WHEN workout_type_for_models = 3 THEN dash_ten - (1.615 + [weight]*-0.001709 + POWER([weight],2)*0.000007193)
+				WHEN workout_type_for_models = 4 THEN dash_ten - (1.687 + [weight]*-0.002106 + POWER([weight],2)*0.000007875)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_ten
       FROM ##temp_advanced_pivot
-	 WHERE dash_forty IS NOT NULL
+	 WHERE dash_ten IS NOT NULL
 	   AND [weight] IS NOT NULL
   ORDER BY workout_id
 
---SELECT * FROM ##temp_speed_scores_barnwell
+--select * from ##temp_expecteds_ten
+
 
 /*-------------------------------
-Speed Score Adjusted
+Expected 10 Percent
 -------------------------------*/
 
--- Check if ##temp_speed_scores_adjusted exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_speed_scores_adjusted') IS NOT NULL
-	DROP TABLE ##temp_speed_scores_adjusted
+-- Check if ##temp_expecteds_ten_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_ten_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_ten_pct
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'SpeedScoreAdjusted' AS code
+		  ,'BelowExpected10Pct' AS code
 		  ,reliability_id
 		  ,attempt
-	      ,([weight] * 125)/(dash_forty *dash_ten*shuttle_short*three_cone) AS value
-	  INTO ##temp_speed_scores_adjusted
+	      ,CASE WHEN workout_type_for_models = 1 THEN (dash_ten - (1.656 + [weight]*-0.001855 + POWER([weight],2)*0.000007444)) / (1.656 + [weight]*-0.001855 + POWER([weight],2)*0.000007444)
+		        WHEN workout_type_for_models = 3 THEN (dash_ten - (1.615 + [weight]*-0.001709 + POWER([weight],2)*0.000007193)) / (1.615 + [weight]*-0.001709 + POWER([weight],2)*0.000007193)
+				WHEN workout_type_for_models = 4 THEN (dash_ten - (1.687 + [weight]*-0.002106 + POWER([weight],2)*0.000007875)) / (1.687 + [weight]*-0.002106 + POWER([weight],2)*0.000007875)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_ten_pct
+      FROM ##temp_advanced_pivot
+	 WHERE dash_ten IS NOT NULL
+	   AND [weight] IS NOT NULL
+  ORDER BY workout_id
+
+--select * from ##temp_expecteds_ten_pct
+
+
+/*-------------------------------
+Expected Flying 20
+-------------------------------*/
+
+-- Check if ##temp_expecteds_flyings_twenty exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_flyings_twenty') IS NOT NULL
+	DROP TABLE ##temp_expecteds_flyings_twenty
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'BelowExpectedFlying20' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 1 THEN ((dash_forty-dash_twenty) - (1.893 + [weight]*-0.001690 + POWER([weight],2)*0.000008531))
+		        WHEN workout_type_for_models = 3 THEN ((dash_forty-dash_twenty) - (1.825 + [weight]*-0.001298 + POWER([weight],2)*0.000007679))
+				WHEN workout_type_for_models = 4 THEN ((dash_forty-dash_twenty) - (1.687 + [weight]*-0.002068 + POWER([weight],2)*0.000009071))
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_flyings_twenty
       FROM ##temp_advanced_pivot
 	 WHERE dash_forty IS NOT NULL
+	   AND dash_twenty IS NOT NULL
 	   AND [weight] IS NOT NULL
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_flyings_twenty
+
+
+/*-------------------------------
+Expected Flying 20
+-------------------------------*/
+
+-- Check if ##temp_expecteds_flyings_twenty_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_flyings_twenty_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_flyings_twenty_pct
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'BelowExpectedFlying20Pct' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 1 THEN ((dash_forty-dash_twenty) - (1.893 + [weight]*-0.001690 + POWER([weight],2)*0.000008531)) / (1.893 + [weight]*-0.001690 + POWER([weight],2)*0.000008531)
+		        WHEN workout_type_for_models = 3 THEN ((dash_forty-dash_twenty) - (1.825 + [weight]*-0.001298 + POWER([weight],2)*0.000007679)) / (1.825 + [weight]*-0.001298 + POWER([weight],2)*0.000007679)
+				WHEN workout_type_for_models = 4 THEN ((dash_forty-dash_twenty) - (1.687 + [weight]*-0.002068 + POWER([weight],2)*0.000009071)) / (1.687 + [weight]*-0.002068 + POWER([weight],2)*0.000009071)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_flyings_twenty_pct
+      FROM ##temp_advanced_pivot
+	 WHERE dash_forty IS NOT NULL
+	   AND dash_twenty IS NOT NULL
+	   AND [weight] IS NOT NULL
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_flyings_twenty_pct
+
+
+/*-------------------------------
+Expected Flying 10
+-------------------------------*/
+
+-- Check if ##temp_expecteds_flyings_ten exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_flyings_ten') IS NOT NULL
+	DROP TABLE ##temp_expecteds_flyings_ten
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'BelowExpectedFlying10' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 1 THEN ((dash_twenty-dash_ten) - (0.09607 + [weight]*-0.0003077 + POWER([weight],2)*0.000003281))
+		        WHEN workout_type_for_models = 3 THEN ((dash_twenty-dash_ten) - (0.09275 + [weight]*-0.0002904 + POWER([weight],2)*0.000003186))
+				WHEN workout_type_for_models = 4 THEN ((dash_twenty-dash_ten) - (1.020 + [weight]*-0.0007839 + POWER([weight],2)*0.000004071)) 
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_flyings_ten
+      FROM ##temp_advanced_pivot
+	 WHERE dash_twenty IS NOT NULL
 	   AND dash_ten IS NOT NULL
-	   AND shuttle_short IS NOT NULL
-	   AND three_cone IS NOT NULL
+	   AND [weight] IS NOT NULL
   ORDER BY workout_id
 
---SELECT * FROM ##temp_speed_scores_adjusted
+--SELECT * FROM ##temp_expecteds_flyings_ten
+
 
 /*-------------------------------
-Speed Score Cohen
+Expected Flying 10
 -------------------------------*/
 
--- Check if ##temp_speed_scores_cohen exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_speed_scores_cohen') IS NOT NULL
-	DROP TABLE ##temp_speed_scores_cohen
+-- Check if ##temp_expecteds_flyings_ten_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_flyings_ten_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_flyings_ten_pct
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'SpeedScoreCohen' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,MIN(dash_forty)+MIN(dash_ten)+MIN(shuttle_short)+MIN(three_cone) AS value
-	  INTO ##temp_speed_scores_cohen
+		  ,'BelowExpectedFlying10Pct' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 1 THEN ((dash_twenty-dash_ten) - (0.09607 + [weight]*-0.0003077 + POWER([weight],2)*0.000003281)) / (0.09607 + [weight]*-0.0003077 + POWER([weight],2)*0.000003281)
+		        WHEN workout_type_for_models = 3 THEN ((dash_twenty-dash_ten) - (0.09275 + [weight]*-0.0002904 + POWER([weight],2)*0.000003186)) / (0.09275 + [weight]*-0.0002904 + POWER([weight],2)*0.000003186)
+				WHEN workout_type_for_models = 4 THEN ((dash_twenty-dash_ten) - (1.020 + [weight]*-0.0007839 + POWER([weight],2)*0.000004071)) / (1.020 + [weight]*-0.0007839 + POWER([weight],2)*0.000004071)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_flyings_ten_pct
       FROM ##temp_advanced_pivot
-	 WHERE dash_forty IS NOT NULL
+	 WHERE dash_twenty IS NOT NULL
 	   AND dash_ten IS NOT NULL
-	   AND shuttle_short IS NOT NULL
-	   AND three_cone IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_speed_scores_cohen
-
-/*-------------------------------
-Lateral Agility
--------------------------------*/
-
--- Check if ##temp_lateral_agility_scores exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_lateral_agility_scores') IS NOT NULL
-	DROP TABLE ##temp_lateral_agility_scores
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'LateralAgility' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,(MIN(dash_forty)-MIN(shuttle_short)) AS value
-	  INTO ##temp_lateral_agility_scores
-      FROM ##temp_advanced_pivot
-	 WHERE dash_forty IS NOT NULL
-	   AND shuttle_short IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-
---SELECT * FROM ##temp_lateral_agility_scores
-
-/*-------------------------------
-Explosion Index (Kirwan/Cohen)
--------------------------------*/
-
--- Check if ##temp_explosions_index exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_explosions_index') IS NOT NULL
-	DROP TABLE ##temp_explosions_index
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'ExplosionIndex' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,MAX(jump_vertical) + MAX(jump_broad)/12 + MAX(bench_reps) AS value
-	  INTO ##temp_explosions_index
-      FROM ##temp_advanced_pivot
-	 WHERE jump_vertical IS NOT NULL
-	   AND jump_broad IS NOT NULL
-	   AND bench_reps IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_explosions_index
-
-/*-------------------------------
-Lower Body Explosion
--------------------------------*/
-
--- Check if ##temp_explosions_lower exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_explosions_lower') IS NOT NULL
-	DROP TABLE ##temp_explosions_lower
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'ExplosionLower' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,MAX(jump_vertical) + 3.5*(MAX(jump_broad)/12)*(MAX([weight])/(MAX(height)/12))/3000 AS value
-	  INTO ##temp_explosions_lower
-      FROM ##temp_advanced_pivot
-	 WHERE jump_vertical IS NOT NULL
-	   AND jump_broad IS NOT NULL
 	   AND [weight] IS NOT NULL
-	   AND height IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
   ORDER BY workout_id
-  
---SELECT * FROM ##temp_explosions_lower
+
+--SELECT * FROM ##temp_expecteds_flyings_ten_pct
+
 
 /*-------------------------------
-Bench Work Joules
-
-225 lbs = 100 kg
-9.8 m/s is the force of gravity
-0.0254 inches in a meter
-divide the above by the time it takes him to do his reps to get bench_watts (not jj)
+Expected Short Shuttle
 -------------------------------*/
 
--- Check if ##temp_benches_work exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_benches_work') IS NOT NULL
-	DROP TABLE ##temp_benches_work
+-- Check if ##temp_expecteds_shuttle_short exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_shuttle_short') IS NOT NULL
+	DROP TABLE ##temp_expecteds_shuttle_short
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'BenchWorkJoules' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,((100*9.8)/(MAX(arm_length)*0.0254))*MAX(bench_reps) AS value
-	  INTO ##temp_benches_work
+		  ,'BelowExpectedShuttleShort' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (shuttle_short - (4.673 + [weight]*-0.006757 + POWER([weight],2)*0.00002197))
+				WHEN workout_type_for_models = 4 THEN (shuttle_short - (4.660 + [weight]*-0.005608 + POWER([weight],2)*0.00001906)) 
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_shuttle_short
       FROM ##temp_advanced_pivot
-	 WHERE arm_length IS NOT NULL
-	   AND bench_reps IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_benches_work
-
-/*-------------------------------
-Vertical Jump Power
-
-I dont know where the below equation 
-comes from, it was in Sandy's code
-
-Vertical Jump Power Equation
-60.7*jump (in cm) + 45.3*[weight] (in kg) - 2055
--------------------------------*/
-
--- Check if ##temp_verticals_power exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_verticals_power') IS NOT NULL
-	DROP TABLE ##temp_verticals_power
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'JumpVertPower' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,(60.7*MAX(jump_vertical)*2.54) + (45.3*(MAX([weight])*0.453595)) - 2055  AS value
-	  INTO ##temp_verticals_power
-      FROM ##temp_advanced_pivot
-	 WHERE jump_vertical IS NOT NULL
+	 WHERE shuttle_short IS NOT NULL
 	   AND [weight] IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
+	   AND attempt IN (1,2)
   ORDER BY workout_id
-  
---SELECT * FROM ##temp_verticals_power
+
+--SELECT * FROM ##temp_expecteds_shuttle_short
+
 
 /*-------------------------------
-Vertical Jump Power
-(Kubiak Version)
-
+Expected Short Shuttle Percent
 -------------------------------*/
 
--- Check if ##temp_verticals_power_kubiak exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_verticals_power_kubiak') IS NOT NULL
-	DROP TABLE ##temp_verticals_power_kubiak
+-- Check if ##temp_expecteds_shuttle_short_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_shuttle_short_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_shuttle_short_pct
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'JumpVertPowerKubiak' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,8*MAX([weight])*SQRT(MAX(jump_vertical)/12) AS value
-	  INTO ##temp_verticals_power_kubiak
+		  ,'BelowExpectedShuttleShortPct' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (shuttle_short - (4.673 + [weight]*-0.006757 + POWER([weight],2)*0.00002197)) / (4.673 + [weight]*-0.006757 + POWER([weight],2)*0.00002197)
+				WHEN workout_type_for_models = 4 THEN (shuttle_short - (4.660 + [weight]*-0.005608 + POWER([weight],2)*0.00001906)) / (4.660 + [weight]*-0.005608 + POWER([weight],2)*0.00001906) 
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_shuttle_short_pct
       FROM ##temp_advanced_pivot
-	 WHERE jump_vertical IS NOT NULL
+	 WHERE shuttle_short IS NOT NULL
 	   AND [weight] IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
+	   AND attempt IN (1,2)
   ORDER BY workout_id
-  
---SELECT * FROM ##temp_verticals_power_kubiak
+
+--SELECT * FROM ##temp_expecteds_shuttle_short_pct
+
 
 /*-------------------------------
-Vertical Jump Power
-(Spagnuolo Version)
+Expected Long Shuttle
 -------------------------------*/
 
--- Check if ##temp_verticals_power_spags exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_verticals_power_spags') IS NOT NULL
-	DROP TABLE ##temp_verticals_power_spags
+-- Check if ##temp_expecteds_shuttle_long exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_shuttle_long') IS NOT NULL
+	DROP TABLE ##temp_expecteds_shuttle_long
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'JumpVertPowerSpags' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,SQRT(MAX([weight]))*SQRT(MAX(jump_vertical)) AS value
-	  INTO ##temp_verticals_power_spags
+		  ,'BelowExpectedShuttleLong' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (shuttle_long - (11.290 + [weight]*-0.004624 + POWER([weight],2)*0.00002703))
+				WHEN workout_type_for_models = 4 THEN (shuttle_long - (11.650 + [weight]*-0.006317 + POWER([weight],2)*0.00003050))
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_shuttle_long
+      FROM ##temp_advanced_pivot
+	 WHERE shuttle_long IS NOT NULL
+	   AND [weight] IS NOT NULL
+	   AND attempt IN (1,2)
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_shuttle_long
+
+
+/*-------------------------------
+Expected Long Shuttle Percent
+-------------------------------*/
+
+-- Check if ##temp_expecteds_shuttle_long_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_shuttle_long_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_shuttle_long_pct
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'BelowExpectedShuttleLongPct' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (shuttle_long - (11.290 + [weight]*-0.004624 + POWER([weight],2)*0.00002703)) / (11.290 + [weight]*-0.004624 + POWER([weight],2)*0.00002703)
+				WHEN workout_type_for_models = 4 THEN (shuttle_long - (11.650 + [weight]*-0.006317 + POWER([weight],2)*0.00003050)) / (11.650 + [weight]*-0.006317 + POWER([weight],2)*0.00003050)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_shuttle_long_pct
+      FROM ##temp_advanced_pivot
+	 WHERE shuttle_long IS NOT NULL
+	   AND [weight] IS NOT NULL
+	   AND attempt IN (1,2)
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_shuttle_long_pct
+
+
+/*-------------------------------
+Expected Three Cone
+-------------------------------*/
+
+-- Check if ##temp_expecteds_three_cone exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_three_cone') IS NOT NULL
+	DROP TABLE ##temp_expecteds_three_cone
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'BelowExpected3Cone' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (three_cone - (8.025 + [weight]*-0.013320 + POWER([weight],2)*0.00004029))
+				WHEN workout_type_for_models = 4 THEN (three_cone - (7.458 + [weight]*-0.007907 + POWER([weight],2)*0.00002817))
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_three_cone
+      FROM ##temp_advanced_pivot
+	 WHERE three_cone IS NOT NULL
+	   AND [weight] IS NOT NULL
+	   AND attempt IN (1,2)
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_three_cone
+
+
+/*-------------------------------
+Expected Three Cone Percent
+-------------------------------*/
+
+-- Check if ##temp_expecteds_three_cone_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_three_cone_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_three_cone_pct
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'BelowExpected3ConePct' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (three_cone - (8.025 + [weight]*-0.013320 + POWER([weight],2)*0.00004029)) / (8.025 + [weight]*-0.013320 + POWER([weight],2)*0.00004029)
+				WHEN workout_type_for_models = 4 THEN (three_cone - (7.458 + [weight]*-0.007907 + POWER([weight],2)*0.00002817)) / (7.458 + [weight]*-0.007907 + POWER([weight],2)*0.00002817)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_three_cone_pct
+      FROM ##temp_advanced_pivot
+	 WHERE three_cone IS NOT NULL
+	   AND [weight] IS NOT NULL
+	   AND attempt IN (1,2)
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_three_cone_pct
+
+
+/*-------------------------------
+Expected Vertical Jump
+-------------------------------*/
+
+-- Check if ##temp_expecteds_jump_vertical exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_jump_vertical') IS NOT NULL
+	DROP TABLE ##temp_expecteds_jump_vertical
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'AboveExpectedVert' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (jump_vertical - (29.8900000 + [weight]*0.0813900 + POWER([weight],2)*-0.0002752))
+				WHEN workout_type_for_models = 4 THEN (jump_vertical - (35.2762608 + [weight]*0.0345267 + POWER([weight],2)*-0.0001840))
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_jump_vertical
       FROM ##temp_advanced_pivot
 	 WHERE jump_vertical IS NOT NULL
 	   AND [weight] IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
+	   AND attempt IN (1,2)
   ORDER BY workout_id
-  
---SELECT * FROM ##temp_verticals_power_spags
+
+--SELECT * FROM ##temp_expecteds_jump_vertical
+
 
 /*-------------------------------
-Broad Jump Power
-(Sandy Version)
-
-I dont know where the below equation 
-comes from, it was in Sandy's code
+Expected Vertical Jump Percent
 -------------------------------*/
 
--- Check if ##temp_broads_power_sandy exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_broads_power_sandy') IS NOT NULL
-	DROP TABLE ##temp_broads_power_sandy
+-- Check if ##temp_expecteds_jump_vertical_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_jump_vertical_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_jump_vertical_pct
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'JumpBroadPowerSandy' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,4*SQRT(2)*MAX([weight])*SQRT(MAX(jump_broad)/12) AS value
-	  INTO ##temp_broads_power_sandy
+		  ,'AboveExpectedVertPct' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (jump_vertical - (29.8900000 + [weight]*0.0813900 + POWER([weight],2)*-0.0002752)) / (29.8900000 + [weight]*0.0813900 + POWER([weight],2)*-0.0002752)
+				WHEN workout_type_for_models = 4 THEN (jump_vertical - (35.2762608 + [weight]*0.0345267 + POWER([weight],2)*-0.0001840)) / (35.2762608 + [weight]*0.0345267 + POWER([weight],2)*-0.0001840)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_jump_vertical_pct
+      FROM ##temp_advanced_pivot
+	 WHERE jump_vertical IS NOT NULL
+	   AND [weight] IS NOT NULL
+	   AND attempt IN (1,2)
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_jump_vertical_pct
+
+
+/*-------------------------------
+Expected Broad Jump
+-------------------------------*/
+
+-- Check if ##temp_expecteds_jump_broad exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_jump_broad') IS NOT NULL
+	DROP TABLE ##temp_expecteds_jump_broad
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'AboveExpectedBroad' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (jump_broad - (-58.520 + [weight]*0.12760 + POWER([weight],2)*-0.0005728 + height*4.408000 + POWER(height,2)*-0.02728))
+				WHEN workout_type_for_models = 4 THEN (jump_broad - (106.700 + [weight]*0.08065 + POWER([weight],2)*-0.0004781 + height*-0.06640 + POWER(height,2)*0.004061))
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_jump_broad
       FROM ##temp_advanced_pivot
 	 WHERE jump_broad IS NOT NULL
 	   AND [weight] IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
+	   AND height IS NOT NULL
+	   AND attempt IN (1,2)
   ORDER BY workout_id
-  
---SELECT * FROM ##temp_broads_power_sandy
+
+--SELECT * FROM ##temp_expecteds_jump_broad where workout_id=396131
+
+--select * from ##temp_advanced_pivot where workout_id=396131
 
 /*-------------------------------
-Combined Jump
-(Sandy Version)
-
-I dont know where the below equation 
-comes from, it was in Sandy's code
+Expected Broad Jump Percent
 -------------------------------*/
 
--- Check if ##temp_jumps_combined exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_jumps_combined') IS NOT NULL
-	DROP TABLE ##temp_jumps_combined
+-- Check if ##temp_expecteds_jump_broad_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_jump_broad_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_jump_broad_pct
 
     SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
 		  ,NULL AS measurable_type_id
-		  ,'JumpCombined' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,(MAX(jump_vertical) + MAX(jump_broad))/2 AS value
-	  INTO ##temp_jumps_combined
+		  ,'AboveExpectedBroadPct' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (jump_broad - (-58.520 + [weight]*0.12760 + POWER([weight],2)*-0.0005728 + height*4.408000 + POWER(height,2)*-0.02728)) / (-58.520 + [weight]*0.12760 + POWER([weight],2)*-0.0005728 + height*4.408000 + POWER(height,2)*-0.02728)
+				WHEN workout_type_for_models = 4 THEN (jump_broad - (106.700 + [weight]*0.08065 + POWER([weight],2)*-0.0004781 + height*-0.06640 + POWER(height,2)*0.004061)) / (106.700 + [weight]*0.08065 + POWER([weight],2)*-0.0004781 + height*-0.06640 + POWER(height,2)*0.004061)
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_jump_broad_pct
       FROM ##temp_advanced_pivot
 	 WHERE jump_broad IS NOT NULL
-	   AND jump_vertical IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_jumps_combined
-
-/*-------------------------------
-Vertical Length
--------------------------------*/
-
--- Check if ##temp_lengths_vertical exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_lengths_vertical') IS NOT NULL
-	DROP TABLE ##temp_lengths_vertical
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'LengthVertical' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,MAX(height) + MAX(arm_length) AS value
-	  INTO ##temp_lengths_vertical
-      FROM ##temp_advanced_pivot
-	 WHERE height IS NOT NULL
-	   AND arm_length IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_lengths_vertical
-
-/*-------------------------------
-Vertical Length With Jump
--------------------------------*/
-
--- Check if ##temp_lengths_vertical_with_jump exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_lengths_vertical_with_jump') IS NOT NULL
-	DROP TABLE ##temp_lengths_vertical_with_jump
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'LengthVerticalWithJump' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,MAX(height) + MAX(arm_length) + MAX(jump_vertical) AS value
-	  INTO ##temp_lengths_vertical_with_jump
-      FROM ##temp_advanced_pivot
-	 WHERE height IS NOT NULL
-	   AND arm_length IS NOT NULL
-	   AND jump_vertical IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_lengths_vertical_with_jump
-
-/*-------------------------------
-Arm Length to Height Ratio
--------------------------------*/
-
--- Check if ##temp_ratios_arm_to_height exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_ratios_arm_to_height') IS NOT NULL
-	DROP TABLE ##temp_ratios_arm_to_height
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'RatioArmToHeight' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,MAX(arm_length)*2 / MAX(height) AS value
-	  INTO ##temp_ratios_arm_to_height
-      FROM ##temp_advanced_pivot
-	 WHERE height IS NOT NULL
-	   AND arm_length IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_ratios_arm_to_height
-
-/*-------------------------------
-Wingspan to Height Ratio
--------------------------------*/
-
--- Check if ##temp_ratios_wing_to_height exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_ratios_wing_to_height') IS NOT NULL
-	DROP TABLE ##temp_ratios_wing_to_height
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'RatioWingToHeight' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,MAX(wingspan) / MAX(height) AS value
-	  INTO ##temp_ratios_wing_to_height
-      FROM ##temp_advanced_pivot
-	 WHERE height IS NOT NULL
-	   AND wingspan IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_ratios_wing_to_height
-
-/*-------------------------------
-Arm Radius
--------------------------------*/
-
--- Check if ##temp_radius_arms exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_radius_arms') IS NOT NULL
-	DROP TABLE ##temp_radius_arms
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'ArmRadius' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,POWER(MAX(arm_length),2) AS value
-	  INTO ##temp_radius_arms
-      FROM ##temp_advanced_pivot
-	 WHERE arm_length IS NOT NULL
-  GROUP BY workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-  ORDER BY workout_id
-  
---SELECT * FROM ##temp_radius_arms
-
-/*-------------------------------
-Arm Radius
--------------------------------*/
-
--- Check if ##temp_body_mass_indices exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_body_mass_indices') IS NOT NULL
-	DROP TABLE ##temp_body_mass_indices
-
-    SELECT workout_id
-		  ,workout_description
-		  ,workout_type_for_models
-	      ,player_id
-		  ,NULL AS measurable_type_id
-		  ,'BodyMassIndex' AS code
-		  ,MAX(reliability_id) AS reliability_id
-		  ,1 AS attempt
-	      ,730*MAX([weight]) / MAX(height) AS value
-	  INTO ##temp_body_mass_indices
-      FROM ##temp_advanced_pivot
-	 WHERE [weight] IS NOT NULL
+	   AND [weight] IS NOT NULL
 	   AND height IS NOT NULL
-  GROUP BY workout_id
+	   AND attempt IN (1,2)
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_jump_broad_pct
+
+
+/*-------------------------------
+Expected Bench Reps
+-------------------------------*/
+
+-- Check if ##temp_expecteds_bench_reps exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_bench_reps') IS NOT NULL
+	DROP TABLE ##temp_expecteds_bench_reps
+
+    SELECT workout_id
 		  ,workout_description
 		  ,workout_type_for_models
 	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'AboveExpectedBenchReps' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (bench_reps - (18.70 + [weight]*0.5598 + POWER([weight],2)*-0.0008353 + height*-1.229 + POWER(height,2)*0.002790 + arm_length*-0.2426)) 
+				WHEN workout_type_for_models = 4 THEN (bench_reps - (214.6 + [weight]*0.6882 + POWER([weight],2)*-0.0010870 + height*-6.949 + POWER(height,2)*0.040670 + arm_length*-0.1797)) 
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_bench_reps
+      FROM ##temp_advanced_pivot
+	 WHERE bench_reps IS NOT NULL
+	   AND [weight] IS NOT NULL
+	   AND height IS NOT NULL
+	   AND attempt IN (1)
   ORDER BY workout_id
-  
---SELECT * FROM ##temp_body_mass_indices
+
+--SELECT * FROM ##temp_expecteds_bench_reps
+
+
+/*-------------------------------
+Expected Bench Reps Percent
+-------------------------------*/
+
+-- Check if ##temp_expecteds_bench_reps_pct exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_expecteds_bench_reps_pct') IS NOT NULL
+	DROP TABLE ##temp_expecteds_bench_reps_pct
+
+    SELECT workout_id
+		  ,workout_description
+		  ,workout_type_for_models
+	      ,player_id
+		  ,NULL AS measurable_type_id
+		  ,'AboveExpectedBenchRepsPct' AS code
+		  ,reliability_id
+		  ,attempt
+	      ,CASE WHEN workout_type_for_models = 3 THEN (bench_reps - (18.70 + [weight]*0.5598 + POWER([weight],2)*-0.0008353 + height*-1.229 + POWER(height,2)*0.002790 + arm_length*-0.2426)) / ((18.70 + [weight]*0.5598 + POWER([weight],2)*-0.0008353 + height*-1.229 + POWER(height,2)*0.002790 + arm_length*-0.2426))
+				WHEN workout_type_for_models = 4 THEN (bench_reps - (214.6 + [weight]*0.6882 + POWER([weight],2)*-0.0010870 + height*-6.949 + POWER(height,2)*0.040670 + arm_length*-0.1797)) / ((214.6 + [weight]*0.6882 + POWER([weight],2)*-0.0010870 + height*-6.949 + POWER(height,2)*0.040670 + arm_length*-0.1797))
+				ELSE NULL
+		   END AS value
+	  INTO ##temp_expecteds_bench_reps_pct
+      FROM ##temp_advanced_pivot
+	 WHERE bench_reps IS NOT NULL
+	   AND [weight] IS NOT NULL
+	   AND height IS NOT NULL
+	   AND attempt IN (1)
+  ORDER BY workout_id
+
+--SELECT * FROM ##temp_expecteds_bench_reps_pct
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1419,135 +1133,95 @@ INSERT INTO ##temp_measurables_master
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_accelerations_ten
+	  FROM ##temp_flyings_twenty
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_accelerations_twenty
+	  FROM ##temp_expecteds_forty
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_accelerations_forty
+	  FROM ##temp_expecteds_forty_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_velocities_ten
+	  FROM ##temp_expecteds_twenty
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_velocities_twenty
+	  FROM ##temp_expecteds_twenty_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_velocities_forty
+	  FROM ##temp_expecteds_ten
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_momentums_ten
+	  FROM ##temp_expecteds_ten_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_momentums_twenty
+	  FROM ##temp_expecteds_flyings_twenty
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_momentums_forty
+	  FROM ##temp_expecteds_flyings_twenty_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_works_ten_sandy
+	  FROM ##temp_expecteds_flyings_ten
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_works_twenty_sandy
+	  FROM ##temp_expecteds_flyings_ten_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_works_forty_sandy
+	  FROM ##temp_expecteds_shuttle_short
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_powers_ten
+	  FROM ##temp_expecteds_shuttle_short_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_powers_twenty
+	  FROM ##temp_expecteds_shuttle_long
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_powers_forty
+	  FROM ##temp_expecteds_shuttle_long_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_speed_scores_barnwell
+	  FROM ##temp_expecteds_three_cone
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_speed_scores_adjusted
+	  FROM ##temp_expecteds_three_cone_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_lateral_agility_scores
+	  FROM ##temp_expecteds_jump_vertical
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_speed_scores_cohen
+	  FROM ##temp_expecteds_jump_vertical_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_explosions_index
+	  FROM ##temp_expecteds_jump_broad
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_explosions_lower
+	  FROM ##temp_expecteds_jump_broad_pct
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_benches_work
+	  FROM ##temp_expecteds_bench_reps
 
 INSERT INTO ##temp_measurables_master
 	SELECT *
-	  FROM ##temp_verticals_power
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_verticals_power_kubiak
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_verticals_power_spags
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_broads_power_sandy
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_jumps_combined
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_lengths_vertical
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_lengths_vertical_with_jump
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_ratios_arm_to_height
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_ratios_wing_to_height
-
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_radius_arms
-	  
-INSERT INTO ##temp_measurables_master
-	SELECT *
-	  FROM ##temp_body_mass_indices
+	  FROM ##temp_expecteds_bench_reps_pct
 
 --SELECT * FROM ##temp_measurables_master
 
@@ -1570,19 +1244,19 @@ IF OBJECT_ID('tempdb..##temp_measurables_with_order') IS NOT NULL
 	DROP TABLE ##temp_measurables_with_order
 
     SELECT *
-		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BodyMassIndex','SpeedScoreCohen') THEN RANK() OVER (PARTITION BY workout_id, code ORDER BY value, attempt DESC)
+		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BelowExpected40','BelowExpected40Pct','BelowExpected20','BelowExpected20Pct','BelowExpected10','BelowExpected10Pct','BelowExpectedFlying10','BelowExpectedFlying10Pct','BelowExpectedFlying20','BelowExpectedFlying20Pct','BelowExpectedShuttleShort','BelowExpectedShuttleShortPct','BelowExpectedShuttleLong','BelowExpectedShuttleLongPct','BelowExpected3Cone','BelowExpected3ConePct') THEN RANK() OVER (PARTITION BY workout_id, code ORDER BY value, attempt DESC)
 		        ELSE RANK() OVER (PARTITION BY workout_id, code ORDER BY value DESC, attempt DESC)
 		   END AS measurable_order_by_workout
-		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BodyMassIndex','SpeedScoreCohen') THEN RANK() OVER (PARTITION BY player_id, reliability_id, code ORDER BY value, attempt DESC)
+		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BelowExpected40','BelowExpected40Pct','BelowExpected20','BelowExpected20Pct','BelowExpected10','BelowExpected10Pct','BelowExpectedFlying10','BelowExpectedFlying10Pct','BelowExpectedFlying20','BelowExpectedFlying20Pct','BelowExpectedShuttleShort','BelowExpectedShuttleShortPct','BelowExpectedShuttleLong','BelowExpectedShuttleLongPct','BelowExpected3Cone','BelowExpected3ConePct') THEN RANK() OVER (PARTITION BY player_id, reliability_id, code ORDER BY value, attempt DESC)
 		        ELSE RANK() OVER (PARTITION BY player_id, reliability_id, code ORDER BY value DESC, attempt DESC)
 		   END AS measurable_order_by_reliability
-		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BodyMassIndex','SpeedScoreCohen') THEN RANK() OVER (PARTITION BY player_id, workout_type_for_models, code ORDER BY value, attempt DESC, workout_id)
+		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BelowExpected40','BelowExpected40Pct','BelowExpected20','BelowExpected20Pct','BelowExpected10','BelowExpected10Pct','BelowExpectedFlying10','BelowExpectedFlying10Pct','BelowExpectedFlying20','BelowExpectedFlying20Pct','BelowExpectedShuttleShort','BelowExpectedShuttleShortPct','BelowExpectedShuttleLong','BelowExpectedShuttleLongPct','BelowExpected3Cone','BelowExpected3ConePct') THEN RANK() OVER (PARTITION BY player_id, workout_type_for_models, code ORDER BY value, attempt DESC, workout_id)
 		        ELSE RANK() OVER (PARTITION BY player_id, workout_type_for_models, code ORDER BY value DESC, attempt DESC, workout_id)
 		   END AS measurable_order_by_model_type
-		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BodyMassIndex','SpeedScoreCohen') THEN RANK() OVER (PARTITION BY player_id, code ORDER BY value, attempt DESC, workout_type_for_models, workout_id, attempt)
+		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BelowExpected40','BelowExpected40Pct','BelowExpected20','BelowExpected20Pct','BelowExpected10','BelowExpected10Pct','BelowExpectedFlying10','BelowExpectedFlying10Pct','BelowExpectedFlying20','BelowExpectedFlying20Pct','BelowExpectedShuttleShort','BelowExpectedShuttleShortPct','BelowExpectedShuttleLong','BelowExpectedShuttleLongPct','BelowExpected3Cone','BelowExpected3ConePct') THEN RANK() OVER (PARTITION BY player_id, code ORDER BY value, attempt DESC, workout_type_for_models, workout_id, attempt)
 		        ELSE RANK() OVER (PARTITION BY player_id, code ORDER BY value DESC, attempt DESC, workout_type_for_models, workout_id, attempt)
 		   END AS measurable_order_all
-		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BodyMassIndex','SpeedScoreCohen') THEN RANK() OVER (PARTITION BY player_id, code ORDER BY reliability_id, value, attempt DESC, workout_type_for_models, workout_id, attempt)
+		  ,CASE WHEN code IN ('40YTime','20YTime','10YTime','20YShuttle','3Cone','60YShuttle','Flying10Time','Flying20Time','BelowExpected40','BelowExpected40Pct','BelowExpected20','BelowExpected20Pct','BelowExpected10','BelowExpected10Pct','BelowExpectedFlying10','BelowExpectedFlying10Pct','BelowExpectedFlying20','BelowExpectedFlying20Pct','BelowExpectedShuttleShort','BelowExpectedShuttleShortPct','BelowExpectedShuttleLong','BelowExpectedShuttleLongPct','BelowExpected3Cone','BelowExpected3ConePct') THEN RANK() OVER (PARTITION BY player_id, code ORDER BY reliability_id, value, attempt DESC, workout_type_for_models, workout_id, attempt)
 		        ELSE RANK() OVER (PARTITION BY player_id, code ORDER BY reliability_id, value DESC, attempt DESC, workout_type_for_models, workout_id, attempt)
 		   END AS measurable_order_all_with_reliabilty
       INTO ##temp_measurables_with_order
@@ -1594,15 +1268,9 @@ IF OBJECT_ID('tempdb..##temp_measurables_with_order') IS NOT NULL
 --SELECT * FROM ##temp_measurables_with_order where player_id=34960
 
 
-
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Create the Run Measurables Table for finding the averages. 
-
-Because of the way you are now handling the order, you need to join 
-the weight back in on workout ID, because it may not have the same
-order by variable as the others.  You want the weight and the time
-to come from the same workout.
+Create the expected run measurables table
 
 The reason you have to join weight in on a separate table is there is 
 no such thing as an "Indy Electronic" or "Other Electronic" weight.
@@ -1610,198 +1278,6 @@ Because the weight is handheld, if you pivot with weight the electronic
 times will not have an associated weight.
 
 OUTPUT TABLES:
-##temp_runs_no_wgt
-##temp_runs_player_overall_best
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_runs_no_wgt exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_runs_no_wgt') IS NOT NULL
-	DROP TABLE ##temp_runs_no_wgt
-
-    SELECT player_id
-	      ,workout_id
-		  ,workout_type_for_models
-	      --,Wgt AS [weight]
-	      ,[40YTime] AS dash_forty
-	      ,[20YTime] AS dash_twenty
-	      ,[10YTime] AS dash_ten
-		  ,[20YShuttle] AS shuttle_short
-		  ,[3Cone] AS three_cone
-		  ,[60YShuttle] AS shuttle_long
-		  ,[Flying10Time] AS flying_ten
-		  ,[Flying20Time] AS flying_twenty
-		  ,[SpeedScoreCohen] AS speed_score_cohen
-		  ,[BodyMassIndex] AS body_mass_index
-	  INTO ##temp_runs_no_wgt
-      FROM (
-    SELECT player_id
-	      ,workout_id
-		  ,workout_type_for_models
---Use measurable_order_all_workouts so that you only get the best measurable from every player.
-		  ,measurable_order_all_with_reliabilty
-		  ,code
-		  ,value
-      FROM ##temp_measurables_with_order WHERE code IN ('40YTime', '20YTime', '10YTime', '20YShuttle', '3Cone', '60YShuttle', 'Flying10Time', 'Flying20Time','SpeedScoreCohen','BodyMassIndex')) up
-     PIVOT (MIN(value) FOR code IN ([40YTime], [20YTime], [10YTime], [20YShuttle], [3Cone], [60YShuttle], [Flying10Time], [Flying20Time], [SpeedScoreCohen],[BodyMassIndex])) AS pvt
-	 WHERE measurable_order_all_with_reliabilty=1
-  ORDER BY player_id, workout_id  
-
- --SELECT * FROM ##temp_runs_no_wgt
-
-
- -- Check if ##temp_runs_player_overall_best exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_runs_player_overall_best') IS NOT NULL
-	DROP TABLE ##temp_runs_player_overall_best
-
-    SELECT nw.*
-	      ,Value AS [weight]
-		  ,nfl_entry_year
-	  INTO ##temp_runs_player_overall_best
-	  FROM ##temp_runs_no_wgt nw
-INNER JOIN ##temp_measurables_with_order wo
-        ON nw.workout_id = wo.workout_id
-	   AND wo.code='Wgt'
-INNER JOIN bane_production_analytics.dbo.players pl
-        ON nw.player_id = pl.id
-
- --SELECT * FROM ##temp_runs_player_overall_best
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the mean and standard deviations for each weight bucket.
-For the dashes, the buckets range from 3 to 7 pounds wide, depending
-on sample sizes.  
-
-Instead of just creating a 5 (or 3 or 7) pound bucket that each weight 
-falls into, for every individual weight create a bucket that includes 
-the 2 (or 1 or 3) pounds above and below.
-
-OUTPUT TABLES:
-##temp_runs_avg_stdev
-
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_runs_avg_stdev exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_runs_avg_stdev') IS NOT NULL
-	DROP TABLE ##temp_runs_avg_stdev
-
-    SELECT DISTINCT r1.[weight]
------------Forty Yard Dash
-	      ,CASE WHEN r1.[weight] < 150 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 150 AND r1.[weight] <= 154) OR (r1.[weight] IN (346,347)) THEN (SELECT AVG(dash_forty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 155 AND r1.[weight] <= 160) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT AVG(dash_forty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(dash_forty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS dash_forty_mean
-	      ,CASE WHEN r1.[weight] < 150 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 150 AND r1.[weight] <= 154) OR (r1.[weight] IN (346,347)) THEN (SELECT STDEVP(dash_forty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 155 AND r1.[weight] <= 160) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT STDEVP(dash_forty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(dash_forty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS dash_forty_stdev
------------Twenty Yard Dash
-	      ,CASE WHEN r1.[weight] < 150 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 150 AND r1.[weight] <= 154) OR (r1.[weight] IN (346,347)) THEN (SELECT AVG(dash_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 155 AND r1.[weight] <= 160) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT AVG(dash_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(dash_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS dash_twenty_mean
-	      ,CASE WHEN r1.[weight] < 150 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 150 AND r1.[weight] <= 154) OR (r1.[weight] IN (346,347)) THEN (SELECT STDEVP(dash_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 155 AND r1.[weight] <= 160) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT STDEVP(dash_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(dash_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS dash_twenty_stdev
------------Ten Yard Dash
-	      ,CASE WHEN r1.[weight] < 159 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 159 AND r1.[weight] <= 161) OR (r1.[weight] IN (346,347)) THEN (SELECT AVG(dash_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 168) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT AVG(dash_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(dash_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS dash_ten_mean
-	      ,CASE WHEN r1.[weight] < 159 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 159 AND r1.[weight] <= 161) OR (r1.[weight] IN (346,347)) THEN (SELECT STDEVP(dash_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 168) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT STDEVP(dash_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(dash_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS dash_ten_stdev
------------Flying Twenty
-	      ,CASE WHEN r1.[weight] < 150 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 150 AND r1.[weight] <= 154) OR (r1.[weight] IN (346,347)) THEN (SELECT AVG(flying_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 155 AND r1.[weight] <= 160) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT AVG(flying_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(flying_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS flying_twenty_mean
-	      ,CASE WHEN r1.[weight] < 150 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 150 AND r1.[weight] <= 154) OR (r1.[weight] IN (346,347)) THEN (SELECT STDEVP(flying_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 155 AND r1.[weight] <= 160) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT STDEVP(flying_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(flying_twenty) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS flying_twenty_stdev
------------Ten Yard Dash
-	      ,CASE WHEN r1.[weight] < 159 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 159 AND r1.[weight] <= 161) OR (r1.[weight] IN (346,347)) THEN (SELECT AVG(flying_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 168) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT AVG(flying_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(flying_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS flying_ten_mean
-	      ,CASE WHEN r1.[weight] < 159 OR r1.[weight] > 347 THEN NULL
-		        WHEN (r1.[weight] >= 159 AND r1.[weight] <= 161) OR (r1.[weight] IN (346,347)) THEN (SELECT STDEVP(flying_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 168) OR (r1.[weight] >= 336 AND r1.[weight] <= 345) THEN (SELECT STDEVP(flying_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(flying_ten) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS flying_ten_stdev
------------Long Shuttle
-	      ,CASE WHEN r1.[weight] < 162 OR r1.[weight] > 269 THEN NULL
-		        WHEN (r1.[weight] IN (162)) THEN (SELECT AVG(shuttle_long) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 163 AND r1.[weight] <= 172) OR (r1.[weight] >= 262 AND r1.[weight] <= 269) THEN (SELECT AVG(shuttle_long) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(shuttle_long) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS shuttle_long_mean
-	      ,CASE WHEN r1.[weight] < 162 OR r1.[weight] > 269 THEN NULL
-		        WHEN (r1.[weight] IN (162)) THEN (SELECT STDEVP(shuttle_long) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 163 AND r1.[weight] <= 172) OR (r1.[weight] >= 262 AND r1.[weight] <= 269) THEN (SELECT STDEVP(shuttle_long) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(shuttle_long) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS shuttle_long_stdev
------------Short Shuttle
-	      ,CASE WHEN r1.[weight] < 160 OR r1.[weight] > 339 THEN NULL
-		        WHEN (r1.[weight] IN (160,161)) THEN (SELECT AVG(shuttle_short) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 171) OR (r1.[weight] >= 327 AND r1.[weight] <= 339) THEN (SELECT AVG(shuttle_short) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(shuttle_short) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS shuttle_short_mean
-	      ,CASE WHEN r1.[weight] < 160 OR r1.[weight] > 339 THEN NULL
-		        WHEN (r1.[weight] IN (160,161)) THEN (SELECT STDEVP(shuttle_short) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 171) OR (r1.[weight] >= 327 AND r1.[weight] <= 339) THEN (SELECT STDEVP(shuttle_short) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(shuttle_short) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS shuttle_short_stdev
------------Three Cone
-	      ,CASE WHEN r1.[weight] < 160 OR r1.[weight] > 341 THEN NULL
-		        WHEN (r1.[weight] IN (160,161,340,341)) THEN (SELECT AVG(three_cone) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 172) OR (r1.[weight] >= 326 AND r1.[weight] <= 339) THEN (SELECT AVG(three_cone) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(three_cone) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS three_cone_mean
-	      ,CASE WHEN r1.[weight] < 160 OR r1.[weight] > 341 THEN NULL
-		        WHEN (r1.[weight] IN (160,161,340,341)) THEN (SELECT STDEVP(three_cone) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 172) OR (r1.[weight] >= 326 AND r1.[weight] <= 339) THEN (SELECT STDEVP(three_cone) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(three_cone) FROM ##temp_runs_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS three_cone_stdev
-	  INTO ##temp_runs_avg_stdev
-      FROM ##temp_runs_player_overall_best r1
-	 WHERE r1.[weight] >= 140
-	   AND r1.[weight] <= 400
-	   and nfl_entry_year < 2016
-  ORDER BY r1.[weight]
-
---SELECT * FROM ##temp_runs_avg_stdev
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the Run Measurables Table for creating player z scores.
-Keep the players' best times for ever given workout_type_for_models.
-
-Because we aren't as interested the actual time as his time/weight z score, 
-we want the lowest of those, not necessarily the lowest raw time.
-
-The reason you have to join weight in on a separate table is there is 
-no such thing as an "Indy Electronic" or "Other Electronic" weight.
-Because the weight is handheld, if you pivot with weight the electronic 
-times will not have an associated weight.
-
-OUTPUT TABLES:
-##temp_runs_player_no_wgt
 ##temp_runs_player_model_type_best
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -1822,8 +1298,22 @@ IF OBJECT_ID('tempdb..##temp_runs_player_no_wgt') IS NOT NULL
 		  ,[60YShuttle] AS shuttle_long
 		  ,[Flying10Time] AS flying_ten
 		  ,[Flying20Time] AS flying_twenty
-		  ,[SpeedScoreCohen] AS speed_score_cohen
-		  ,[BodyMassIndex] AS body_mass_index
+	      ,[BelowExpected40] AS dash_forty_below_expected
+		  ,[BelowExpected40Pct] AS dash_forty_below_expected_pct
+		  ,[BelowExpected20] AS dash_twenty_below_expected
+		  ,[BelowExpected20Pct] AS dash_twenty_below_expected_pct
+		  ,[BelowExpected10] AS dash_ten_below_expected
+		  ,[BelowExpected10Pct] AS dash_ten_below_expected_pct
+		  ,[BelowExpectedFlying10] AS flying_ten_below_expected
+		  ,[BelowExpectedFlying10Pct] AS flying_ten_below_expected_pct
+		  ,[BelowExpectedFlying20] AS flying_twenty_below_expected
+		  ,[BelowExpectedFlying20Pct] AS flying_twenty_below_expected_pct
+		  ,[BelowExpectedShuttleShort] AS shuttle_short_below_expected
+		  ,[BelowExpectedShuttleShortPct] AS shuttle_short_below_expected_pct
+		  ,[BelowExpectedShuttleLong] AS shuttle_long_below_expected
+		  ,[BelowExpectedShuttleLongPct] AS shuttle_long_below_expected_pct
+		  ,[BelowExpected3Cone] AS three_cone_below_expected
+		  ,[BelowExpected3ConePct] AS three_cone_below_expected_pct
 	  INTO ##temp_runs_player_no_wgt
       FROM (
     SELECT player_id
@@ -1832,8 +1322,8 @@ IF OBJECT_ID('tempdb..##temp_runs_player_no_wgt') IS NOT NULL
 		  ,measurable_order_by_workout
 		  ,code
 		  ,value
-      FROM ##temp_measurables_with_order WHERE code IN ('40YTime', '20YTime', '10YTime', '20YShuttle', '3Cone', '60YShuttle', 'Flying10Time', 'Flying20Time','SpeedScoreCohen','BodyMassIndex')) up
-     PIVOT (MIN(value) FOR code IN ([40YTime], [20YTime], [10YTime], [20YShuttle], [3Cone], [60YShuttle], [Flying10Time], [Flying20Time], [SpeedScoreCohen], [BodyMassIndex])) AS pvt
+      FROM ##temp_measurables_with_order WHERE code IN ('40YTime', '20YTime', '10YTime', '20YShuttle', '3Cone', '60YShuttle', 'Flying10Time', 'Flying20Time','BelowExpected40','BelowExpected40Pct','BelowExpected20','BelowExpected20Pct','BelowExpected10','BelowExpected10Pct','BelowExpectedFlying10','BelowExpectedFlying10Pct','BelowExpectedFlying20','BelowExpectedFlying20Pct','BelowExpectedShuttleShort','BelowExpectedShuttleShortPct','BelowExpectedShuttleLong','BelowExpectedShuttleLongPct','BelowExpected3Cone','BelowExpected3ConePct')) up
+     PIVOT (MIN(value) FOR code IN ([40YTime], [20YTime], [10YTime], [20YShuttle], [3Cone], [60YShuttle], [Flying10Time], [Flying20Time],[BelowExpected40],[BelowExpected40Pct],[BelowExpected20],[BelowExpected20Pct],[BelowExpected10],[BelowExpected10Pct],[BelowExpectedFlying10],[BelowExpectedFlying10Pct],[BelowExpectedFlying20],[BelowExpectedFlying20Pct],[BelowExpectedShuttleShort],[BelowExpectedShuttleShortPct],[BelowExpectedShuttleLong],[BelowExpectedShuttleLongPct],[BelowExpected3Cone],[BelowExpected3ConePct])) AS pvt
 	 WHERE measurable_order_by_workout=1
   ORDER BY player_id, workout_id  
 
@@ -1855,323 +1345,9 @@ INNER JOIN ##temp_measurables_with_order wo
  --SELECT * FROM ##temp_runs_player_model_type_best
 
 
-
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Create the z scores for the 40/20/10 yard dashes
-and the short/long shuttles and 3 cone drill.
-
-OUTPUT TABLES:
-##temp_runs_with_z
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_runs_with_z exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_runs_with_z') IS NOT NULL
-	DROP TABLE ##temp_runs_with_z
-
-    SELECT player_id
-	      ,workout_id
-		  ,workout_type_for_models
-	      ,mb.[weight]
-	      ,dash_forty
-		  ,(dash_forty - dash_forty_mean) / dash_forty_stdev AS dash_forty_z_score
-	      ,dash_twenty
-		  ,(dash_twenty - dash_twenty_mean) / dash_twenty_stdev AS dash_twenty_z_score
-	      ,dash_ten
-		  ,(dash_ten - dash_ten_mean) / dash_ten_stdev AS dash_ten_z_score
-	      ,flying_ten
-		  ,(flying_ten - flying_ten_mean) / flying_ten_stdev AS flying_ten_z_score
-		  ,flying_twenty
-		  ,(flying_twenty - flying_twenty_mean) / flying_twenty_stdev AS flying_twenty_z_score
-		  ,shuttle_long
-		  ,(shuttle_long - shuttle_long_mean) / shuttle_long_stdev AS shuttle_long_z_score
-		  ,shuttle_short
-		  ,(shuttle_short - shuttle_short_mean) / shuttle_short_stdev AS shuttle_short_z_score
-		  ,three_cone
-		  ,(three_cone - three_cone_mean) / three_cone_stdev AS three_cone_z_score
-		  ,speed_score_cohen
-		  ,body_mass_index
-	  INTO ##temp_runs_with_z 
-	  FROM ##temp_runs_avg_stdev av
-INNER JOIN ##temp_runs_player_model_type_best mb
-        ON av.[weight] = mb.[weight]
-
---SELECT * FROM ##temp_runs_with_z
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the table with each player's best run z scores for every
-workout_type_for_models variable. This gives you more flexilibity
-with which "best" to use.
-
-OUTPUT TABLES:
-##temp_runs_best_z
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_runs_best_z exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_runs_best_z') IS NOT NULL
-	DROP TABLE ##temp_runs_best_z
-
-    SELECT player_id
-		  ,workout_type_for_models
-		  ,MAX([weight]) AS [weight]
-		  ,MIN(dash_forty) AS dash_forty_best
-		  ,MIN(dash_forty_z_score) AS dash_forty_z_score_best
-	      ,MIN(dash_twenty) AS dash_twenty_best
-	      ,MIN(dash_twenty_z_score) AS dash_twenty_z_score_best
-	      ,MIN(dash_ten) AS dash_ten_best
-	      ,MIN(dash_ten_z_score) AS dash_ten_z_score_best
-	      ,MIN(flying_twenty) AS flying_twenty_best
-	      ,MIN(flying_twenty_z_score) AS flying_twenty_z_score_best
-	      ,MIN(flying_ten) AS flying_ten_best
-	      ,MIN(flying_ten_z_score) AS flying_ten_z_score_best
-		  ,MIN(shuttle_long) AS shuttle_long_best
-		  ,MIN(shuttle_long_z_score) AS shuttle_long_z_score_best
-	      ,MIN(shuttle_short) AS shuttle_short_best
-	      ,MIN(shuttle_short_z_score) AS shuttle_short_z_score_best
-	      ,MIN(three_cone) AS three_cone_best
-		  ,MIN(three_cone_z_score) AS three_cone_z_score_best
-		  ,MIN(speed_score_cohen) AS speed_score_cohen_best
-		  ,MIN(body_mass_index) AS body_mass_index_best
-	  INTO ##temp_runs_best_z
-	  FROM ##temp_runs_with_z
-  GROUP BY player_id, workout_type_for_models
-  ORDER BY player_id, workout_type_for_models
-
---SELECT * FROM ##temp_runs_best_z
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the Non-Run Measurables Table for finding the averages. 
-
-Some are bucketed by position (hand size), some are bucketed by 
-more than one position (weight) so that you can easily move a player 
-back and forth between positions (in case you have a safety and you
-want to project him as a LB), others are bucketed by other factors.
-
-You join in weight in a second step for the same reason as 
-the above sections that pivot workout data similarly.
-
-The reason we don't just take all the weights to get a weight z score
-is because we can't say universally whether it is better to be heavier
-or lighter.  Because if you just use the weights joined on to their 
-best workouts, you will double count for some players, add the 
-case statement in the table to create the averages so it only takes
-one weight per player.
-
-
-OUTPUT TABLES:
-##temp_measures_player_overall_best
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_measures_no_wgt exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measures_no_wgt') IS NOT NULL
-	DROP TABLE ##temp_measures_no_wgt
-
-    SELECT player_id
-	      ,workout_id
-		  ,workout_type_for_models
-	      ,[HgtCnv] AS height
-	      ,[ArmLngCnv] AS arm_length
-	      ,[WSpanCnv] AS wingspan
-		  ,[HSpanCnv] AS hand_size
-		  ,[BroadJumpCnv] AS jump_broad
-		  ,[StrengthReps225] AS bench_reps
-		  ,[BenchWorkJoules] AS bench_work_joules
-		  ,[VertJumpCnv] AS jump_vertical
-		  ,[TestScore] AS test_score
-		  ,[Acceleration10] AS acceleration_ten
-		  ,[Acceleration20] AS acceleration_twenty
-		  ,[Acceleration40] AS acceleration_forty
-		  ,[ArmRadius] AS arm_radius
-		  ,[ExplosionIndex] AS explosion_index
-		  ,[ExplosionLower] AS explosion_lower
-		  ,[JumpBroadPowerSandy] AS jump_broad_power_sandy
-		  ,[JumpCombined] AS jump_combined
-		  ,[JumpVertPower] AS jump_vertical_power
-		  ,[JumpVertPowerKubiak] AS jump_vertical_power_kubiak
-		  ,[JumpVertPowerSpags] AS jump_vertical_power_spags
-		  ,[LateralAgility] AS lateral_agility_score
-		  ,[LengthVertical] AS length_vertical
-		  ,[LengthVerticalWithJump] AS length_vertical_with_jump
-		  ,[Momentum10] AS momentum_ten
-		  ,[Momentum20] AS momentum_twenty
-		  ,[Momentum40] AS momentum_forty
-		  ,[RatioArmToHeight] AS ratio_arm_to_height
-		  ,[RatioWingToHeight] AS ratio_wing_to_height
-		  ,[SpeedScoreAdjusted] AS speed_score_adjusted
-		  ,[SpeedScoreBarnwell] AS speed_score_barnwell
-		  ,[Velocity10] AS velocity_ten
-		  ,[Velocity20] AS velocity_twenty
-		  ,[Velocity40] AS velocity_forty
-		  ,[Work10Sandy] AS work_ten_sandy
-		  ,[Work20Sandy] AS work_twenty_sandy
-		  ,[Work40Sandy] AS work_forty_sandy
-		  ,[Power10] AS power_ten
-		  ,[Power20] AS power_twenty
-		  ,[Power40] AS power_forty
-	  INTO ##temp_measures_no_wgt
-      FROM (
-      SELECT player_id
-	      ,workout_id
-		  ,workout_type_for_models
---Use measurable_order_all_workouts so that you only get the best measurable from every player.
-		  ,measurable_order_all_with_reliabilty
-		  ,code
-		  ,value
-      FROM ##temp_measurables_with_order WHERE code IN ('HgtCnv', 'ArmLngCnv', 'WSpanCnv', 'HSpanCnv', 'BroadJumpCnv', 'StrengthReps225', 'BenchWorkJoules', 'VertJumpCnv', 'TestScore', 'Acceleration10', 'Acceleration20', 'Acceleration40', 'ArmRadius', 'ExplosionIndex' ,'ExplosionLower', 'JumpBroadPowerSandy', 'JumpCombined', 'JumpVertPower', 'JumpVertPowerKubiak', 'JumpVertPowerSpags', 'LateralAgility', 'LengthVertical', 'LengthVerticalWithJump', 'Momentum10', 'Momentum20', 'Momentum40', 'RatioArmToHeight', 'RatioWingToHeight', 'SpeedScoreAdjusted', 'SpeedScoreBarnwell', 'Velocity10', 'Velocity20', 'Velocity40', 'Work10Sandy', 'Work20Sandy', 'Work40Sandy', 'Power10', 'Power20', 'Power40')) up
-     PIVOT (MAX(value) FOR code IN ([HgtCnv], [ArmLngCnv], [WSpanCnv], [HSpanCnv], [BroadJumpCnv], [StrengthReps225], [BenchWorkJoules], [VertJumpCnv], [TestScore], [Acceleration10], [Acceleration20], [Acceleration40], [ArmRadius], [ExplosionIndex] ,[ExplosionLower], [JumpBroadPowerSandy], [JumpCombined], [JumpVertPower], [JumpVertPowerKubiak], [JumpVertPowerSpags], [LateralAgility], [LengthVertical], [LengthVerticalWithJump], [Momentum10], [Momentum20], [Momentum40], [RatioArmToHeight], [RatioWingToHeight], [SpeedScoreAdjusted], [SpeedScoreBarnwell], [Velocity10], [Velocity20], [Velocity40], [Work10Sandy], [Work20Sandy], [Work40Sandy], [Power10], [Power20], [Power40])) AS pvt
-	 WHERE measurable_order_all_with_reliabilty=1
-  ORDER BY player_id, workout_id
-
- --SELECT * FROM ##temp_measures_no_wgt
-
-
- -- Check if ##temp_measures_player_overall_best exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measures_player_overall_best') IS NOT NULL
-	DROP TABLE ##temp_measures_player_overall_best
-
-    SELECT nw.*
-	      ,Value AS [weight]
-	      ,CASE WHEN dbg.position != '' AND dbg.position IS NOT NULL THEN CASE WHEN dbg.position IN ('OB','RUSH','SAM','DP') THEN 'OB'
-																	           WHEN dbg.position IN ('DS','FS','SS') THEN 'DS'
-																			   ELSE UPPER(LTRIM(RTRIM(dbg.position)))
-																		  END
-		        ELSE CASE WHEN pos.abbreviation IN ('WR') THEN 'WO'
-				          WHEN pos.abbreviation IN ('RB') THEN 'OH'
-						  WHEN pos.abbreviation IN ('ROG','LOG','OL') THEN 'OG'
-						  WHEN pos.abbreviation IN ('ROT','LOT') THEN 'OT'
-						  WHEN pos.abbreviation IN ('MB','ILB','WB','LB','4-3 WILL') THEN 'IB'
-						  WHEN pos.abbreviation IN ('ROLB','LOLB','OLB','SB','RUSH','4-3 DE','4-3 SAM','SAM') THEN 'OB'
-						  WHEN pos.abbreviation IN ('NB','DB') THEN 'DC'
-						  WHEN pos.abbreviation IN ('RDE','LDE') THEN 'DE'
-						  WHEN pos.abbreviation IN ('NT','DL','NG') THEN 'DT'
-						  WHEN pos.abbreviation IN ('SS','FS') THEN 'DS'
-						  ELSE UPPER(LTRIM(RTRIM(pos.abbreviation)))
-					 END
-		   END AS position
-		   ,nfl_entry_year
-	  INTO ##temp_measures_player_overall_best
-	  FROM ##temp_measures_no_wgt nw
-INNER JOIN ##temp_measurables_with_order wo
-        ON nw.workout_id = wo.workout_id
-	   AND wo.code='Wgt'
-INNER JOIN [bane_production_analytics].[dbo].[players] pl
-        ON nw.player_id = pl.id
- LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
-        ON pl.position_id = pos.id
- LEFT JOIN ##temp_draft_board_positions_with_order dbg
-        ON nw.player_id = dbg.player_id
-		AND dbg.draft_board_position_order = 1
-  ORDER BY player_id, workout_id
-
- --SELECT * FROM ##temp_measures_player_overall_best
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the mean and standard deviations for each weight and position bucket.
-For the weight buckets, they range from 3 to 7 pounds wide. The positions
-are just bucekted by the position.  
-
-Instead of just creating a 5 (or 3 or 7) pound bucket that each weight 
-falls into, for every individual weight create a bucket that includes 
-the 2 (or 1 or 3) pounds above and below.
-
-OUTPUT TABLES:
-##temp_measures_avg_stdev_weight
-##temp_measures_avg_stdev_position
-
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_measures_avg_stdev_weight exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measures_avg_stdev_weight') IS NOT NULL
-	DROP TABLE ##temp_measures_avg_stdev_weight
-
-    SELECT DISTINCT r1.[weight]
------------Bench Press Work
-	      ,CASE WHEN r1.[weight] < 162 OR r1.[weight] > 343 THEN NULL
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 163) OR (r1.[weight] >= 341 AND r1.[weight] <= 343) THEN (SELECT AVG(bench_work_joules) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 164 AND r1.[weight] <= 165) OR (r1.[weight] >= 338 AND r1.[weight] <= 340) THEN (SELECT AVG(bench_work_joules) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(bench_work_joules) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS bench_work_joules_mean
-	      ,CASE WHEN r1.[weight] < 162 OR r1.[weight] > 343 THEN NULL
-		        WHEN (r1.[weight] >= 162 AND r1.[weight] <= 163) OR (r1.[weight] >= 341 AND r1.[weight] <= 343) THEN (SELECT STDEVP(bench_work_joules) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 164 AND r1.[weight] <= 165) OR (r1.[weight] >= 338 AND r1.[weight] <= 340) THEN (SELECT STDEVP(bench_work_joules) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(bench_work_joules) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS bench_work_joules_stdev
------------Broad Jump
-	      ,CASE WHEN r1.[weight] < 156 OR r1.[weight] > 346 THEN NULL
-		        WHEN (r1.[weight] >= 156 AND r1.[weight] <= 157) OR (r1.[weight] >= 342 AND r1.[weight] <= 346) THEN (SELECT AVG(jump_broad) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 158 AND r1.[weight] <= 163) OR (r1.[weight] >= 339 AND r1.[weight] <= 341) THEN (SELECT AVG(jump_broad) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(jump_broad) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS jump_broad_mean
-	      ,CASE WHEN r1.[weight] < 156 OR r1.[weight] > 346 THEN NULL
-		        WHEN (r1.[weight] >= 156 AND r1.[weight] <= 157) OR (r1.[weight] >= 342 AND r1.[weight] <= 346) THEN (SELECT STDEVP(jump_broad) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 158 AND r1.[weight] <= 163) OR (r1.[weight] >= 339 AND r1.[weight] <= 341) THEN (SELECT STDEVP(jump_broad) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(jump_broad) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS jump_broad_stdev
------------Vertical Jump
-	      ,CASE WHEN r1.[weight] < 157 OR r1.[weight] > 346 THEN NULL
-		        WHEN (r1.[weight] IN (157)) OR (r1.[weight] >= 342 AND r1.[weight] <= 346) THEN (SELECT AVG(jump_vertical) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 158 AND r1.[weight] <= 163) OR (r1.[weight] >= 340 AND r1.[weight] <= 341) THEN (SELECT AVG(jump_vertical) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT AVG(jump_vertical) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS jump_vertical_mean
-	      ,CASE WHEN r1.[weight] < 157 OR r1.[weight] > 346 THEN NULL
-		        WHEN (r1.[weight] IN (157)) OR (r1.[weight] >= 342 AND r1.[weight] <= 346) THEN (SELECT STDEVP(jump_vertical) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 3 AND r1.[weight] <= r2.[weight] + 3)
-		        WHEN (r1.[weight] >= 158 AND r1.[weight] <= 163) OR (r1.[weight] >= 340 AND r1.[weight] <= 341) THEN (SELECT STDEVP(jump_vertical) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 2 AND r1.[weight] <= r2.[weight] + 2)
-		        ELSE (SELECT STDEVP(jump_vertical) FROM ##temp_measures_player_overall_best r2 WHERE r1.[weight] >= r2.[weight] - 1 AND r1.[weight] <= r2.[weight] + 1) 
-		   END AS jump_vertical_stdev
-	  INTO ##temp_measures_avg_stdev_weight
-      FROM ##temp_measures_player_overall_best r1
-	 WHERE r1.[weight] >= 140
-	   AND r1.[weight] <= 400
-	   and nfl_entry_year<2016
-  ORDER BY r1.[weight]
-
---SELECT * FROM ##temp_measures_avg_stdev_weight
-
-
--- Check if ##temp_measures_avg_stdev_position exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measures_avg_stdev_position') IS NOT NULL
-	DROP TABLE ##temp_measures_avg_stdev_position
-
-    SELECT position
-	      ,AVG(height) AS height_mean
-	      ,STDEVP(height) AS height_stdev
-	      ,AVG(CASE WHEN workout_type_for_models = 1 THEN NULL ELSE [weight] END) AS weight_mean
-	      ,STDEVP(CASE WHEN workout_type_for_models = 1 THEN NULL ELSE [weight] END) AS weight_stdev
-	      ,AVG(arm_length) AS arm_length_mean
-	      ,STDEVP(arm_length) AS arm_length_stdev
-	      ,AVG(hand_size) AS hand_size_mean
-	      ,STDEVP(hand_size) AS hand_size_stdev
-	      ,AVG(wingspan) AS wingspan_mean
-	      ,STDEVP(wingspan) AS wingspan_stdev
-	      ,AVG(test_score) AS test_score_mean
-	      ,STDEVP(test_score) AS test_score_stdev
-	  INTO ##temp_measures_avg_stdev_position
-      FROM ##temp_measures_player_overall_best 
-	 WHERE position != 'KOR'
-  GROUP BY position
-  ORDER BY position
-
---SELECT * FROM ##temp_measures_avg_stdev_position
-
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the Non-Run Measurables Table. Some are bucketed by position
-(hand size), some are bucketed by more than one position (weight)
-so that you can easily move a player back and forth between positions
-(in case you have a safety and you want to project him as a LB), 
-others are bucketed by other factors.
+Create the Non-Run Expected Measurables Table
 
 You join in weight in a second step for the same reason as 
 the above sections that pivot workout data similarly.
@@ -2194,39 +1370,14 @@ IF OBJECT_ID('tempdb..##temp_measures_master_no_wgt') IS NOT NULL
 		  ,[HSpanCnv] AS hand_size
 		  ,[BroadJumpCnv] AS jump_broad
 		  ,[StrengthReps225] AS bench_reps
-		  ,[BenchWorkJoules] AS bench_work_joules
 		  ,[VertJumpCnv] AS jump_vertical
 		  ,[TestScore] AS test_score
-		  ,[Acceleration10] AS acceleration_ten
-		  ,[Acceleration20] AS acceleration_twenty
-		  ,[Acceleration40] AS acceleration_forty
-		  ,[ArmRadius] AS arm_radius
-		  ,[ExplosionIndex] AS explosion_index
-		  ,[ExplosionLower] AS explosion_lower
-		  ,[JumpBroadPowerSandy] AS jump_broad_power_sandy
-		  ,[JumpCombined] AS jump_combined
-		  ,[JumpVertPower] AS jump_vertical_power
-		  ,[JumpVertPowerKubiak] AS jump_vertical_power_kubiak
-		  ,[JumpVertPowerSpags] AS jump_vertical_power_spags
-		  ,[LateralAgility] AS lateral_agility_score
-		  ,[LengthVertical] AS length_vertical
-		  ,[LengthVerticalWithJump] AS length_vertical_with_jump
-		  ,[Momentum10] AS momentum_ten
-		  ,[Momentum20] AS momentum_twenty
-		  ,[Momentum40] AS momentum_forty
-		  ,[RatioArmToHeight] AS ratio_arm_to_height
-		  ,[RatioWingToHeight] AS ratio_wing_to_height
-		  ,[SpeedScoreAdjusted] AS speed_score_adjusted
-		  ,[SpeedScoreBarnwell] AS speed_score_barnwell
-		  ,[Velocity10] AS velocity_ten
-		  ,[Velocity20] AS velocity_twenty
-		  ,[Velocity40] AS velocity_forty
-		  ,[Work10Sandy] AS work_ten_sandy
-		  ,[Work20Sandy] AS work_twenty_sandy
-		  ,[Work40Sandy] AS work_forty_sandy
-		  ,[Power10] AS power_ten
-		  ,[Power20] AS power_twenty
-		  ,[Power40] AS power_forty
+		  ,[AboveExpectedVert] AS jump_vertical_above_expected
+		  ,[AboveExpectedVertPct] AS jump_vertical_above_expected_pct
+		  ,[AboveExpectedBroad] AS jump_broad_above_expected
+		  ,[AboveExpectedBroadPct] AS jump_broad_above_expected_pct
+		  ,[AboveExpectedBenchReps] AS bench_reps_above_expected
+		  ,[AboveExpectedBenchRepsPct] AS bench_reps_above_expected_pct
 	  INTO ##temp_measures_master_no_wgt
       FROM (
       SELECT player_id
@@ -2235,8 +1386,8 @@ IF OBJECT_ID('tempdb..##temp_measures_master_no_wgt') IS NOT NULL
 		  ,measurable_order_by_workout=1
 		  ,code
 		  ,value
-      FROM ##temp_measurables_with_order WHERE code IN ('HgtCnv', 'ArmLngCnv', 'WSpanCnv', 'HSpanCnv', 'BroadJumpCnv', 'StrengthReps225', 'BenchWorkJoules', 'VertJumpCnv', 'TestScore', 'Acceleration10', 'Acceleration20', 'Acceleration40', 'ArmRadius', 'ExplosionIndex' ,'ExplosionLower', 'JumpBroadPowerSandy', 'JumpCombined', 'JumpVertPower', 'JumpVertPowerKubiak', 'JumpVertPowerSpags', 'LateralAgility', 'LengthVertical', 'LengthVerticalWithJump', 'Momentum10', 'Momentum20', 'Momentum40', 'RatioArmToHeight', 'RatioWingToHeight', 'SpeedScoreAdjusted', 'SpeedScoreBarnwell', 'Velocity10', 'Velocity20', 'Velocity40', 'Work10Sandy', 'Work20Sandy', 'Work40Sandy', 'Power10', 'Power20', 'Power40')) up
-     PIVOT (MAX(value) FOR code IN ([HgtCnv], [ArmLngCnv], [WSpanCnv], [HSpanCnv], [BroadJumpCnv], [StrengthReps225], [BenchWorkJoules], [VertJumpCnv], [TestScore], [Acceleration10], [Acceleration20], [Acceleration40], [ArmRadius], [ExplosionIndex] ,[ExplosionLower], [JumpBroadPowerSandy], [JumpCombined], [JumpVertPower], [JumpVertPowerKubiak], [JumpVertPowerSpags], [LateralAgility], [LengthVertical], [LengthVerticalWithJump], [Momentum10], [Momentum20], [Momentum40], [RatioArmToHeight], [RatioWingToHeight], [SpeedScoreAdjusted], [SpeedScoreBarnwell], [Velocity10], [Velocity20], [Velocity40], [Work10Sandy], [Work20Sandy], [Work40Sandy], [Power10], [Power20], [Power40])) AS pvt
+      FROM ##temp_measurables_with_order WHERE code IN ('HgtCnv', 'ArmLngCnv', 'WSpanCnv', 'HSpanCnv', 'BroadJumpCnv', 'StrengthReps225', 'VertJumpCnv', 'TestScore', 'AboveExpectedVert', 'AboveExpectedVertPct', 'AboveExpectedBroad', 'AboveExpectedBroadPct', 'AboveExpectedBenchReps', 'AboveExpectedBenchRepsPct')) up
+     PIVOT (MAX(value) FOR code IN ([HgtCnv], [ArmLngCnv], [WSpanCnv], [HSpanCnv], [BroadJumpCnv], [StrengthReps225], [VertJumpCnv], [TestScore], [AboveExpectedVert], [AboveExpectedVertPct], [AboveExpectedBroad], [AboveExpectedBroadPct], [AboveExpectedBenchReps], [AboveExpectedBenchRepsPct])) AS pvt
 	 WHERE measurable_order_by_workout=1
   ORDER BY player_id, workout_id
   
@@ -2249,35 +1400,11 @@ IF OBJECT_ID('tempdb..##temp_measures_master') IS NOT NULL
 
     SELECT nw.*
 	      ,Value AS [weight]
-	      ,CASE WHEN dbg.position != '' AND dbg.position IS NOT NULL THEN CASE WHEN dbg.position IN ('OB','RUSH','SAM','DP') THEN 'OB'
-																	           WHEN dbg.position IN ('DS','FS','SS') THEN 'DS'
-																			   ELSE UPPER(LTRIM(RTRIM(dbg.position)))
-																		  END
-		        ELSE CASE WHEN pos.abbreviation IN ('WR') THEN 'WO'
-				          WHEN pos.abbreviation IN ('RB') THEN 'OH'
-						  WHEN pos.abbreviation IN ('ROG','LOG','OL') THEN 'OG'
-						  WHEN pos.abbreviation IN ('ROT','LOT') THEN 'OT'
-						  WHEN pos.abbreviation IN ('MB','ILB','WB','LB','4-3 WILL') THEN 'IB'
-						  WHEN pos.abbreviation IN ('ROLB','LOLB','OLB','SB','RUSH','4-3 DE','4-3 SAM','SAM') THEN 'OB'
-						  WHEN pos.abbreviation IN ('NB','DB') THEN 'DC'
-						  WHEN pos.abbreviation IN ('RDE','LDE') THEN 'DE'
-						  WHEN pos.abbreviation IN ('NT','DL','NG') THEN 'DT'
-						  WHEN pos.abbreviation IN ('SS','FS') THEN 'DS'
-						  ELSE UPPER(LTRIM(RTRIM(pos.abbreviation)))
-					 END
-		   END AS position
 	  INTO ##temp_measures_master
 	  FROM ##temp_measures_master_no_wgt nw
 INNER JOIN ##temp_measurables_with_order wo
         ON nw.workout_id = wo.workout_id
 	   AND wo.code='Wgt'
-INNER JOIN [bane_production_analytics].[dbo].[players] pl
-        ON nw.player_id = pl.id
- LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
-        ON pl.position_id = pos.id
- LEFT JOIN ##temp_draft_board_positions_with_order dbg
-        ON nw.player_id = dbg.player_id
-		AND dbg.draft_board_position_order = 1
   ORDER BY player_id, workout_id
 
  --SELECT * FROM ##temp_measures_master
@@ -2285,120 +1412,53 @@ INNER JOIN [bane_production_analytics].[dbo].[players] pl
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Create the table with each player's measure z scores.  
+Unpivot the best runs and measures.
 
 OUTPUT TABLES:
-##temp_meaures_with_z
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_meaures_with_z exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_meaures_with_z') IS NOT NULL
-	DROP TABLE ##temp_meaures_with_z
-
-    SELECT ma.*
-		  ,(height - height_mean) / height_stdev AS height_z_score
-		  ,(ma.[weight] - weight_mean) / weight_stdev AS weight_z_score
-		  ,(arm_length - arm_length_mean) / arm_length_stdev AS arm_length_z_score
-		  ,(wingspan - wingspan_mean) / wingspan_stdev AS wingspan_z_score
-		  ,(hand_size - hand_size_mean) / hand_size_stdev AS hand_size_z_score
-		  ,(jump_broad - jump_broad_mean) / jump_broad_stdev AS jump_broad_z_score
-		  ,(bench_work_joules - bench_work_joules_mean) / bench_work_joules_stdev AS bench_work_joules_z_score
-		  ,(jump_vertical - jump_vertical_mean) / jump_vertical_stdev AS jump_vertical_z_score
-		  ,(test_score - test_score_mean) / test_score_stdev AS test_score_z_score
-	  INTO ##temp_meaures_with_z
-	  FROM ##temp_measures_master ma
- LEFT JOIN ##temp_measures_avg_stdev_weight wt
-        ON ma.[weight] = wt.[weight]
- LEFT JOIN ##temp_measures_avg_stdev_position pos
-        ON ma.position = pos.position
-
---SELECT * FROM ##temp_meaures_with_z
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Create the table with each player's best measure z scores for every
-workout_type_for_models variable. This gives you more flexilibity
-with which "best" to use.
-
-OUTPUT TABLES:
-##temp_measures_best_z
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_measures_best_z exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measures_best_z') IS NOT NULL
-	DROP TABLE ##temp_measures_best_z
-
-    SELECT player_id
-		  ,workout_type_for_models
-		  ,MAX(height) AS height_best
-		  ,MAX(height_z_score) AS height_z_score_best
-	      ,MAX([weight]) AS weight_best
-		  ,MAX(weight_z_score) AS weight_z_score_best
-	      ,MAX(arm_length) AS arm_length_best
-		  ,MAX(arm_length_z_score) AS arm_length_z_score_best
-	      ,MAX(wingspan) AS wingspan_best
-		  ,MAX(wingspan_z_score) AS wingspan_z_score_best
-	      ,MAX(hand_size) AS hand_size_best
-		  ,MAX(hand_size_z_score) AS hand_size_z_score_best
-	      ,MAX(jump_broad) AS jump_broad_best
-		  ,MAX(jump_broad_z_score) AS jump_broad_z_score_best
-	      ,MAX(bench_work_joules) AS bench_work_joules_best
-		  ,MAX(bench_work_joules_z_score) AS bench_work_joules_z_score_best
-		  ,MAX(jump_vertical) AS jump_vertical_best
-		  ,MAX(jump_vertical_z_score) AS jump_vertical_z_score_best
-		  ,MAX(test_score) AS test_score_best
-		  ,MAX(test_score_z_score) AS test_score_z_score_best
-		  ,MAX(acceleration_ten) AS acceleration_ten_best
-		  ,MAX(acceleration_twenty) AS acceleration_twenty_best
-		  ,MAX(acceleration_forty) AS acceleration_forty_best
-		  ,MAX(arm_radius) AS arm_radius_best
-		  ,MAX(bench_reps) AS bench_reps_best
-		  ,MAX(explosion_index) AS explosion_index_best
-		  ,MAX(explosion_lower) AS explosion_lower_best
-		  ,MAX(jump_broad_power_sandy) AS jump_broad_power_sandy_best
-		  ,MAX(jump_combined) AS jump_combined_best
-		  ,MAX(jump_vertical_power) AS jump_vertical_power_best
-		  ,MAX(jump_vertical_power_kubiak) AS jump_vertical_power_kubiak_best
-		  ,MAX(jump_vertical_power_spags) AS jump_vertical_power_spags_best
-		  ,MAX(lateral_agility_score) AS lateral_agility_score_best
-		  ,MAX(length_vertical) AS length_vertical_best
-		  ,MAX(length_vertical_with_jump) AS length_vertical_with_jump_best
-		  ,MAX(momentum_ten) AS momentum_ten_best
-		  ,MAX(momentum_twenty) AS momentum_twenty_best
-		  ,MAX(momentum_forty) AS momentum_forty_best
-		  ,MAX(ratio_arm_to_height) AS ratio_arm_to_height_best
-		  ,MAX(ratio_wing_to_height) AS ratio_wing_to_height_best
-		  ,MAX(speed_score_adjusted) AS speed_score_adjusted_best
-		  ,MAX(speed_score_barnwell) AS speed_score_barnwell_best
-		  ,MAX(velocity_ten) AS velocity_ten_best
-		  ,MAX(velocity_twenty) AS velocity_twenty_best
-		  ,MAX(velocity_forty) AS velocity_forty_best
-		  ,MAX(work_ten_sandy) AS work_ten_sandy_best
-		  ,MAX(work_twenty_sandy) AS work_twenty_sandy_best
-		  ,MAX(work_forty_sandy) AS work_forty_sandy_best
-		  ,MAX(power_ten) AS power_ten_best
-		  ,MAX(power_twenty) AS power_twenty_best
-		  ,MAX(power_forty) AS power_forty_best
-	  INTO ##temp_measures_best_z
-	  FROM ##temp_meaures_with_z
-  GROUP BY player_id, workout_type_for_models
-  ORDER BY player_id, workout_type_for_models
-
---SELECT * FROM ##temp_runs_best_z
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Unpivot the best measures.
-
-OUTPUT TABLES:
+##temp_runs_best_unpivot
 ##temp_measures_best_unpivot
-##temp_measures_best_z_unpivot
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_runs_best_unpivot exists, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_runs_best_unpivot') IS NOT NULL
+		DROP TABLE ##temp_runs_best_unpivot
+
+	SELECT player_id
+		  ,workout_type_for_models
+		  ,me.code
+		  ,me.value
+	  INTO ##temp_runs_best_unpivot
+      FROM ##temp_runs_player_model_type_best
+   UNPIVOT (value FOR code IN ([weight]
+                              ,dash_forty
+							  ,dash_twenty
+							  ,dash_ten
+							  ,shuttle_short
+							  ,three_cone
+							  ,shuttle_long
+							  ,flying_ten
+							  ,flying_twenty
+							  ,dash_forty_below_expected
+							  ,dash_forty_below_expected_pct
+							  ,dash_twenty_below_expected
+							  ,dash_twenty_below_expected_pct
+							  ,dash_ten_below_expected
+							  ,dash_ten_below_expected_pct
+							  ,flying_ten_below_expected
+							  ,flying_ten_below_expected_pct
+							  ,flying_twenty_below_expected
+							  ,flying_twenty_below_expected_pct
+							  ,shuttle_short_below_expected
+							  ,shuttle_short_below_expected_pct
+							  ,shuttle_long_below_expected
+							  ,shuttle_long_below_expected_pct
+							  ,three_cone_below_expected
+							  ,three_cone_below_expected_pct
+							   )) AS me
+
+--SELECT * FROM ##temp_runs_best_unpivot
+
 
 -- Check if ##temp_measures_best_unpivot exists, if it does drop it
 	IF OBJECT_ID('tempdb..##temp_measures_best_unpivot') IS NOT NULL
@@ -2409,124 +1469,25 @@ OUTPUT TABLES:
 		  ,me.code
 		  ,me.value
 	  INTO ##temp_measures_best_unpivot
-      FROM ##temp_measures_best_z
-   UNPIVOT (value FOR code IN (height_best
-							  ,weight_best
-							  ,arm_length_best
-							  ,wingspan_best
-							  ,hand_size_best
-							  ,jump_broad_best
-							  ,bench_work_joules_best
-							  ,jump_vertical_best
-							  ,test_score_best
-							  ,acceleration_ten_best
-							  ,acceleration_twenty_best
-							  ,acceleration_forty_best
-							  ,arm_radius_best
-							  ,bench_reps_best
-							  ,explosion_index_best
-							  ,explosion_lower_best
-							  ,jump_broad_power_sandy_best
-							  ,jump_combined_best
-							  ,jump_vertical_power_best
-							  ,jump_vertical_power_kubiak_best
-							  ,jump_vertical_power_spags_best
-							  ,lateral_agility_score_best
-							  ,length_vertical_best
-							  ,length_vertical_with_jump_best
-							  ,momentum_ten_best
-							  ,momentum_twenty_best
-							  ,momentum_forty_best
-							  ,ratio_arm_to_height_best
-							  ,ratio_wing_to_height_best
-							  ,speed_score_adjusted_best
-							  ,speed_score_barnwell_best
-							  ,velocity_ten_best
-							  ,velocity_twenty_best
-							  ,velocity_forty_best
-							  ,work_ten_sandy_best
-							  ,work_twenty_sandy_best
-							  ,work_forty_sandy_best
-							  ,power_ten_best
-							  ,power_twenty_best
-							  ,power_forty_best
+      FROM ##temp_measures_master
+   UNPIVOT (value FOR code IN (height
+                              ,[weight]
+                              ,arm_length
+                              ,wingspan
+                              ,hand_size
+                              ,jump_broad
+                              ,bench_reps
+                              ,jump_vertical
+                              ,test_score
+                              ,jump_vertical_above_expected
+                              ,jump_vertical_above_expected_pct
+                              ,jump_broad_above_expected
+                              ,jump_broad_above_expected_pct
+                              ,bench_reps_above_expected
+                              ,bench_reps_above_expected_pct
 							   )) AS me
 
-
--- Check if ##temp_measures_best_z_unpivot exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_measures_best_z_unpivot') IS NOT NULL
-		DROP TABLE ##temp_measures_best_z_unpivot
-
-	SELECT player_id
-		  ,workout_type_for_models
-		  ,me.code
-		  ,me.value
-	  INTO ##temp_measures_best_z_unpivot
-      FROM ##temp_measures_best_z
-   UNPIVOT (value FOR code IN (height_z_score_best
-							  ,weight_z_score_best
-							  ,arm_length_z_score_best
-							  ,wingspan_z_score_best
-							  ,hand_size_z_score_best
-							  ,jump_broad_z_score_best
-							  ,bench_work_joules_z_score_best
-							  ,jump_vertical_z_score_best
-							  ,test_score_z_score_best
-							   )) AS me
-
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Unpivot the best runs.
-
-OUTPUT TABLES:
-##temp_runs_best_unpivot
-##temp_runs_best_z_unpivot
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if ##temp_runs_best_unpivot exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_runs_best_unpivot') IS NOT NULL
-		DROP TABLE ##temp_runs_best_unpivot
-
-	SELECT player_id
-		  ,workout_type_for_models
-		  ,ru.code
-		  ,ru.value
-	  INTO ##temp_runs_best_unpivot
-      FROM ##temp_runs_best_z
-   UNPIVOT (value FOR code IN (dash_forty_best
-							  ,dash_twenty_best
-							  ,dash_ten_best
-							  ,flying_twenty_best
-							  ,flying_ten_best
-							  ,shuttle_long_best
-							  ,shuttle_short_best
-							  ,three_cone_best
-							  ,speed_score_cohen_best
-							  ,body_mass_index_best
-							   )) AS ru
-
-
--- Check if ##temp_runs_best_z_unpivot exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_runs_best_z_unpivot') IS NOT NULL
-		DROP TABLE ##temp_runs_best_z_unpivot
-
-	SELECT player_id
-		  ,workout_type_for_models
-		  ,ru.code
-		  ,ru.value
-	  INTO ##temp_runs_best_z_unpivot
-      FROM ##temp_runs_best_z
-   UNPIVOT (value FOR code IN (dash_forty_z_score_best
-							  ,dash_twenty_z_score_best
-							  ,dash_ten_z_score_best
-							  ,flying_twenty_z_score_best
-							  ,flying_ten_z_score_best
-							  ,shuttle_long_z_score_best
-							  ,shuttle_short_z_score_best
-							  ,three_cone_z_score_best
-							   )) AS ru
+--SELECT * FROM ##temp_measures_best_unpivot
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2552,15 +1513,7 @@ OUTPUT TABLES:
 
 INSERT INTO ##temp_advanced_measurables_master
 	SELECT *
-	  FROM ##temp_measures_best_z_unpivot
-
-INSERT INTO ##temp_advanced_measurables_master
-	SELECT *
 	  FROM ##temp_runs_best_unpivot
-
-INSERT INTO ##temp_advanced_measurables_master
-	SELECT *
-	  FROM ##temp_runs_best_z_unpivot
 
 --SELECT * FROM ##temp_advanced_measurables_master
 
@@ -2612,354 +1565,198 @@ IF OBJECT_ID('tempdb..##temp_measurables_for_modeling_values') IS NOT NULL
 	DROP TABLE ##temp_measurables_for_modeling_values
 
     SELECT player_id
-	      ,[acceleration_forty_best] AS acceleration_forty_best_value
-	      ,[acceleration_ten_best] AS acceleration_ten_best_value
-	      ,[acceleration_twenty_best] AS acceleration_twenty_best_value
-	      ,[arm_length_best] AS arm_length_best_value
-	      ,[arm_length_z_score_best] AS arm_length_z_score_best_value
-	      ,[arm_radius_best] AS arm_radius_best_value
-	      ,[bench_reps_best] AS bench_reps_best_value
-	      ,[bench_work_joules_best] AS bench_work_joules_best_value
-	      ,[bench_work_joules_z_score_best] AS bench_work_joules_z_score_best_value
-	      ,[body_mass_index_best] AS body_mass_index_best_value
-	      ,[dash_forty_best] AS dash_forty_best_value
-	      ,[dash_forty_z_score_best] AS dash_forty_z_score_best_value
-	      ,[dash_ten_best] AS dash_ten_best_value
-	      ,[dash_ten_z_score_best] AS dash_ten_z_score_best_value
-	      ,[dash_twenty_best] AS dash_twenty_best_value
-	      ,[dash_twenty_z_score_best] AS dash_twenty_z_score_best_value
-	      ,[explosion_index_best] AS explosion_index_best_value
-	      ,[explosion_lower_best] AS explosion_lower_best_value
-	      ,[flying_ten_best] AS flying_ten_best_value
-	      ,[flying_ten_z_score_best] AS flying_ten_z_score_best_value
-	      ,[flying_twenty_best] AS flying_twenty_best_value
-	      ,[flying_twenty_z_score_best] AS flying_twenty_z_score_best_value
-	      ,[hand_size_best] AS hand_size_best_value
-	      ,[hand_size_z_score_best] AS hand_size_z_score_best_value
-	      ,[height_best] AS height_best_value
-	      ,[height_z_score_best] AS height_z_score_best_value
-	      ,[jump_broad_best] AS jump_broad_best_value
-	      ,[jump_broad_power_sandy_best] AS jump_broad_power_sandy_best_value
-	      ,[jump_broad_z_score_best] AS jump_broad_z_score_best_value
-	      ,[jump_combined_best] AS jump_combined_best_value
-	      ,[jump_vertical_best] AS jump_vertical_best_value
-	      ,[jump_vertical_power_best] AS jump_vertical_power_best_value
-	      ,[jump_vertical_power_kubiak_best] AS jump_vertical_power_kubiak_best_value
-	      ,[jump_vertical_power_spags_best] AS jump_vertical_power_spags_best_value
-	      ,[jump_vertical_z_score_best] AS jump_vertical_z_score_best_value
-		  ,[lateral_agility_score_best] AS lateral_agility_score_best_value
-	      ,[length_vertical_best] AS length_vertical_best_value
-	      ,[length_vertical_with_jump_best] AS length_vertical_with_jump_best_value
-	      ,[momentum_forty_best] AS momentum_forty_best_value
-	      ,[momentum_ten_best] AS momentum_ten_best_value
-	      ,[momentum_twenty_best] AS momentum_twenty_best_value
-	      ,[power_forty_best] AS power_forty_best_value
-	      ,[power_ten_best] AS power_ten_best_value
-	      ,[power_twenty_best] AS power_twenty_best_value
-	      ,[ratio_arm_to_height_best] AS ratio_arm_to_height_best_value
-	      ,[ratio_wing_to_height_best] AS ratio_wing_to_height_best_value
-	      ,[shuttle_long_best] AS shuttle_long_best_value
-	      ,[shuttle_long_z_score_best] AS shuttle_long_z_score_best_value
-	      ,[shuttle_short_best] AS shuttle_short_best_value
-	      ,[shuttle_short_z_score_best] AS shuttle_short_z_score_best_value
-	      ,[speed_score_adjusted_best] AS speed_score_adjusted_best_value
-	      ,[speed_score_barnwell_best] AS speed_score_barnwell_best_value
-	      ,[speed_score_cohen_best] AS speed_score_cohen_best_value
-	      ,[test_score_best] AS test_score_best_value
-	      ,[test_score_z_score_best] AS test_score_z_score_best_value
-	      ,[three_cone_best] AS three_cone_best_value
-	      ,[three_cone_z_score_best] AS three_cone_z_score_best_value
-	      ,[velocity_forty_best] AS velocity_forty_best_value
-	      ,[velocity_ten_best] AS velocity_ten_best_value
-	      ,[velocity_twenty_best] AS velocity_twenty_best_value
-	      ,[weight_best] AS weight_best_value
-	      ,[weight_z_score_best] AS weight_z_score_best_value
-	      ,[wingspan_best] AS wingspan_best_value
-	      ,[wingspan_z_score_best] AS wingspan_z_score_best_value
-	      ,[work_forty_sandy_best] AS work_forty_sandy_best_value
-	      ,[work_ten_sandy_best] AS work_ten_sandy_best_value
-	      ,[work_twenty_sandy_best] AS work_twenty_sandy_best_value
+	       ,height
+	       ,[weight]
+	       ,dash_forty
+	       ,dash_twenty
+	       ,dash_ten
+	       ,shuttle_short
+	       ,three_cone
+	       ,shuttle_long
+	       ,flying_ten
+	       ,flying_twenty
+	       ,dash_forty_below_expected
+	       ,dash_forty_below_expected_pct
+	       ,dash_twenty_below_expected
+	       ,dash_twenty_below_expected_pct
+	       ,dash_ten_below_expected
+	       ,dash_ten_below_expected_pct
+	       ,flying_ten_below_expected
+	       ,flying_ten_below_expected_pct
+	       ,flying_twenty_below_expected
+	       ,flying_twenty_below_expected_pct
+	       ,shuttle_short_below_expected
+	       ,shuttle_short_below_expected_pct
+	       ,shuttle_long_below_expected
+	       ,shuttle_long_below_expected_pct
+	       ,three_cone_below_expected
+	       ,three_cone_below_expected_pct
+	       ,arm_length
+	       ,wingspan
+	       ,hand_size
+	       ,jump_broad
+	       ,bench_reps
+	       ,jump_vertical
+	       ,test_score
+	       ,jump_vertical_above_expected
+	       ,jump_vertical_above_expected_pct
+	       ,jump_broad_above_expected
+	       ,jump_broad_above_expected_pct
+	       ,bench_reps_above_expected
+	       ,bench_reps_above_expected_pct
 	  INTO ##temp_measurables_for_modeling_values
       FROM (
       SELECT player_id
 		  ,order_for_models
 		  ,code
 		  ,value
-      FROM ##temp_advanced_measurables_master_with_order WHERE code IN ('acceleration_forty_best', 'acceleration_ten_best', 'acceleration_twenty_best', 'arm_length_best', 'arm_length_z_score_best', 'arm_radius_best', 'bench_reps_best', 'bench_work_joules_best', 'bench_work_joules_z_score_best', 'body_mass_index_best', 'dash_forty_best', 'dash_forty_z_score_best', 'dash_ten_best', 'dash_ten_z_score_best', 'dash_twenty_best', 'dash_twenty_z_score_best', 'explosion_index_best', 'explosion_lower_best', 'flying_ten_best', 'flying_ten_z_score_best', 'flying_twenty_best', 'flying_twenty_z_score_best', 'hand_size_best', 'hand_size_z_score_best', 'height_best', 'height_z_score_best', 'jump_broad_best', 'jump_broad_power_sandy_best', 'jump_broad_z_score_best', 'jump_combined_best', 'jump_vertical_best', 'jump_vertical_power_best', 'jump_vertical_power_kubiak_best', 'jump_vertical_power_spags_best', 'jump_vertical_z_score_best', 'lateral_agility_score_best', 'length_vertical_best', 'length_vertical_with_jump_best', 'momentum_forty_best', 'momentum_ten_best', 'momentum_twenty_best', 'power_forty_best', 'power_ten_best', 'power_twenty_best', 'ratio_arm_to_height_best', 'ratio_wing_to_height_best', 'shuttle_long_best', 'shuttle_long_z_score_best', 'shuttle_short_best', 'shuttle_short_z_score_best', 'speed_score_adjusted_best', 'speed_score_barnwell_best', 'speed_score_cohen_best', 'test_score_best', 'test_score_z_score_best', 'three_cone_best', 'three_cone_z_score_best', 'velocity_forty_best', 'velocity_ten_best', 'velocity_twenty_best', 'weight_best', 'weight_z_score_best', 'wingspan_best', 'wingspan_z_score_best', 'work_forty_sandy_best', 'work_ten_sandy_best', 'work_twenty_sandy_best')) up
-     PIVOT (MAX(value) FOR code IN ([acceleration_forty_best], [acceleration_ten_best], [acceleration_twenty_best], [arm_length_best], [arm_length_z_score_best], [arm_radius_best], [bench_reps_best], [bench_work_joules_best], [bench_work_joules_z_score_best], [body_mass_index_best], [dash_forty_best], [dash_forty_z_score_best], [dash_ten_best], [dash_ten_z_score_best], [dash_twenty_best], [dash_twenty_z_score_best], [explosion_index_best], [explosion_lower_best], [flying_ten_best], [flying_ten_z_score_best], [flying_twenty_best], [flying_twenty_z_score_best], [hand_size_best], [hand_size_z_score_best], [height_best], [height_z_score_best], [jump_broad_best], [jump_broad_power_sandy_best], [jump_broad_z_score_best], [jump_combined_best], [jump_vertical_best], [jump_vertical_power_best], [jump_vertical_power_kubiak_best], [jump_vertical_power_spags_best], [jump_vertical_z_score_best], [lateral_agility_score_best], [length_vertical_best], [length_vertical_with_jump_best], [momentum_forty_best], [momentum_ten_best], [momentum_twenty_best], [power_forty_best], [power_ten_best], [power_twenty_best], [ratio_arm_to_height_best], [ratio_wing_to_height_best], [shuttle_long_best], [shuttle_long_z_score_best], [shuttle_short_best], [shuttle_short_z_score_best], [speed_score_adjusted_best], [speed_score_barnwell_best], [speed_score_cohen_best], [test_score_best], [test_score_z_score_best], [three_cone_best], [three_cone_z_score_best], [velocity_forty_best], [velocity_ten_best], [velocity_twenty_best], [weight_best], [weight_z_score_best], [wingspan_best], [wingspan_z_score_best], [work_forty_sandy_best], [work_ten_sandy_best], [work_twenty_sandy_best])) AS pvt
+      FROM ##temp_advanced_measurables_master_with_order WHERE code IN ('height', 'weight', 'dash_forty', 'dash_twenty', 'dash_ten', 'shuttle_short', 'three_cone', 'shuttle_long', 'flying_ten', 'flying_twenty', 'dash_forty_below_expected', 'dash_forty_below_expected_pct', 'dash_twenty_below_expected', 'dash_twenty_below_expected_pct', 'dash_ten_below_expected', 'dash_ten_below_expected_pct', 'flying_ten_below_expected', 'flying_ten_below_expected_pct', 'flying_twenty_below_expected', 'flying_twenty_below_expected_pct', 'shuttle_short_below_expected', 'shuttle_short_below_expected_pct', 'shuttle_long_below_expected', 'shuttle_long_below_expected_pct', 'three_cone_below_expected', 'three_cone_below_expected_pct', 'arm_length', 'wingspan', 'hand_size', 'jump_broad', 'bench_reps', 'jump_vertical', 'test_score', 'jump_vertical_above_expected', 'jump_vertical_above_expected_pct', 'jump_broad_above_expected', 'jump_broad_above_expected_pct', 'bench_reps_above_expected', 'bench_reps_above_expected_pct')) up
+     PIVOT (MAX(value) FOR code IN ([height], [weight], [dash_forty], [dash_twenty], [dash_ten], [shuttle_short], [three_cone], [shuttle_long], [flying_ten], [flying_twenty], [dash_forty_below_expected], [dash_forty_below_expected_pct], [dash_twenty_below_expected], [dash_twenty_below_expected_pct], [dash_ten_below_expected], [dash_ten_below_expected_pct], [flying_ten_below_expected], [flying_ten_below_expected_pct], [flying_twenty_below_expected], [flying_twenty_below_expected_pct], [shuttle_short_below_expected], [shuttle_short_below_expected_pct], [shuttle_long_below_expected], [shuttle_long_below_expected_pct], [three_cone_below_expected], [three_cone_below_expected_pct], [arm_length], [wingspan], [hand_size], [jump_broad], [bench_reps], [jump_vertical], [test_score], [jump_vertical_above_expected], [jump_vertical_above_expected_pct], [jump_broad_above_expected], [jump_broad_above_expected_pct], [bench_reps_above_expected], [bench_reps_above_expected_pct])) AS pvt
 	 WHERE order_for_models = 1
   ORDER BY player_id
 
 --SELECT * FROM ##temp_measurables_for_modeling_values
 
 
--- Check if ##temp_measurables_for_modeling_elec exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measurables_for_modeling_elec') IS NOT NULL
-	DROP TABLE ##temp_measurables_for_modeling_elec
-
-    SELECT player_id
-	      ,[acceleration_forty_best] AS acceleration_forty_best_electronic
-	      ,[acceleration_ten_best] AS acceleration_ten_best_electronic
-	      ,[acceleration_twenty_best] AS acceleration_twenty_best_electronic
-	      ,[arm_length_best] AS arm_length_best_electronic
-	      ,[arm_length_z_score_best] AS arm_length_z_score_best_electronic
-	      ,[arm_radius_best] AS arm_radius_best_electronic
-	      ,[bench_reps_best] AS bench_reps_best_electronic
-	      ,[bench_work_joules_best] AS bench_work_joules_best_electronic
-	      ,[bench_work_joules_z_score_best] AS bench_work_joules_z_score_best_electronic
-	      ,[body_mass_index_best] AS body_mass_index_best_electronic
-	      ,[dash_forty_best] AS dash_forty_best_electronic
-	      ,[dash_forty_z_score_best] AS dash_forty_z_score_best_electronic
-	      ,[dash_ten_best] AS dash_ten_best_electronic
-	      ,[dash_ten_z_score_best] AS dash_ten_z_score_best_electronic
-	      ,[dash_twenty_best] AS dash_twenty_best_electronic
-	      ,[dash_twenty_z_score_best] AS dash_twenty_z_score_best_electronic
-	      ,[explosion_index_best] AS explosion_index_best_electronic
-	      ,[explosion_lower_best] AS explosion_lower_best_electronic
-	      ,[flying_ten_best] AS flying_ten_best_electronic
-	      ,[flying_ten_z_score_best] AS flying_ten_z_score_best_electronic
-	      ,[flying_twenty_best] AS flying_twenty_best_electronic
-	      ,[flying_twenty_z_score_best] AS flying_twenty_z_score_best_electronic
-	      ,[hand_size_best] AS hand_size_best_electronic
-	      ,[hand_size_z_score_best] AS hand_size_z_score_best_electronic
-	      ,[height_best] AS height_best_electronic
-	      ,[height_z_score_best] AS height_z_score_best_electronic
-	      ,[jump_broad_best] AS jump_broad_best_electronic
-	      ,[jump_broad_power_sandy_best] AS jump_broad_power_sandy_best_electronic
-	      ,[jump_broad_z_score_best] AS jump_broad_z_score_best_electronic
-	      ,[jump_combined_best] AS jump_combined_best_electronic
-	      ,[jump_vertical_best] AS jump_vertical_best_electronic
-	      ,[jump_vertical_power_best] AS jump_vertical_power_best_electronic
-	      ,[jump_vertical_power_kubiak_best] AS jump_vertical_power_kubiak_best_electronic
-	      ,[jump_vertical_power_spags_best] AS jump_vertical_power_spags_best_electronic
-	      ,[jump_vertical_z_score_best] AS jump_vertical_z_score_best_electronic
-		  ,[lateral_agility_score_best] AS lateral_agility_score_best_electronic
-	      ,[length_vertical_best] AS length_vertical_best_electronic
-	      ,[length_vertical_with_jump_best] AS length_vertical_with_jump_best_electronic
-	      ,[momentum_forty_best] AS momentum_forty_best_electronic
-	      ,[momentum_ten_best] AS momentum_ten_best_electronic
-	      ,[momentum_twenty_best] AS momentum_twenty_best_electronic
-	      ,[power_forty_best] AS power_forty_best_electronic
-	      ,[power_ten_best] AS power_ten_best_electronic
-	      ,[power_twenty_best] AS power_twenty_best_electronic
-	      ,[ratio_arm_to_height_best] AS ratio_arm_to_height_best_electronic
-	      ,[ratio_wing_to_height_best] AS ratio_wing_to_height_best_electronic
-	      ,[shuttle_long_best] AS shuttle_long_best_electronic
-	      ,[shuttle_long_z_score_best] AS shuttle_long_z_score_best_electronic
-	      ,[shuttle_short_best] AS shuttle_short_best_electronic
-	      ,[shuttle_short_z_score_best] AS shuttle_short_z_score_best_electronic
-	      ,[speed_score_adjusted_best] AS speed_score_adjusted_best_electronic
-	      ,[speed_score_barnwell_best] AS speed_score_barnwell_best_electronic
-	      ,[speed_score_cohen_best] AS speed_score_cohen_best_electronic
-	      ,[test_score_best] AS test_score_best_electronic
-	      ,[test_score_z_score_best] AS test_score_z_score_best_electronic
-	      ,[three_cone_best] AS three_cone_best_electronic
-	      ,[three_cone_z_score_best] AS three_cone_z_score_best_electronic
-	      ,[velocity_forty_best] AS velocity_forty_best_electronic
-	      ,[velocity_ten_best] AS velocity_ten_best_electronic
-	      ,[velocity_twenty_best] AS velocity_twenty_best_electronic
-	      ,[weight_best] AS weight_best_electronic
-	      ,[weight_z_score_best] AS weight_z_score_best_electronic
-	      ,[wingspan_best] AS wingspan_best_electronic
-	      ,[wingspan_z_score_best] AS wingspan_z_score_best_electronic
-	      ,[work_forty_sandy_best] AS work_forty_sandy_best_electronic
-	      ,[work_ten_sandy_best] AS work_ten_sandy_best_electronic
-	      ,[work_twenty_sandy_best] AS work_twenty_sandy_best_electronic
-	  INTO ##temp_measurables_for_modeling_elec
-      FROM (
-      SELECT player_id
-		  ,order_for_models
-		  ,code
-		  ,electronic
-      FROM ##temp_advanced_measurables_master_with_order WHERE code IN ('acceleration_forty_best', 'acceleration_ten_best', 'acceleration_twenty_best', 'arm_length_best', 'arm_length_z_score_best', 'arm_radius_best', 'bench_reps_best', 'bench_work_joules_best', 'bench_work_joules_z_score_best', 'body_mass_index_best', 'dash_forty_best', 'dash_forty_z_score_best', 'dash_ten_best', 'dash_ten_z_score_best', 'dash_twenty_best', 'dash_twenty_z_score_best', 'explosion_index_best', 'explosion_lower_best', 'flying_ten_best', 'flying_ten_z_score_best', 'flying_twenty_best', 'flying_twenty_z_score_best', 'hand_size_best', 'hand_size_z_score_best', 'height_best', 'height_z_score_best', 'jump_broad_best', 'jump_broad_power_sandy_best', 'jump_broad_z_score_best', 'jump_combined_best', 'jump_vertical_best', 'jump_vertical_power_best', 'jump_vertical_power_kubiak_best', 'jump_vertical_power_spags_best', 'jump_vertical_z_score_best', 'lateral_agility_score_best', 'length_vertical_best', 'length_vertical_with_jump_best', 'momentum_forty_best', 'momentum_ten_best', 'momentum_twenty_best', 'power_forty_best', 'power_ten_best', 'power_twenty_best', 'ratio_arm_to_height_best', 'ratio_wing_to_height_best', 'shuttle_long_best', 'shuttle_long_z_score_best', 'shuttle_short_best', 'shuttle_short_z_score_best', 'speed_score_adjusted_best', 'speed_score_barnwell_best', 'speed_score_cohen_best', 'test_score_best', 'test_score_z_score_best', 'three_cone_best', 'three_cone_z_score_best', 'velocity_forty_best', 'velocity_ten_best', 'velocity_twenty_best', 'weight_best', 'weight_z_score_best', 'wingspan_best', 'wingspan_z_score_best', 'work_forty_sandy_best', 'work_ten_sandy_best', 'work_twenty_sandy_best')) up
-     PIVOT (MAX(electronic) FOR code IN ([acceleration_forty_best], [acceleration_ten_best], [acceleration_twenty_best], [arm_length_best], [arm_length_z_score_best], [arm_radius_best], [bench_reps_best], [bench_work_joules_best], [bench_work_joules_z_score_best], [body_mass_index_best], [dash_forty_best], [dash_forty_z_score_best], [dash_ten_best], [dash_ten_z_score_best], [dash_twenty_best], [dash_twenty_z_score_best], [explosion_index_best], [explosion_lower_best], [flying_ten_best], [flying_ten_z_score_best], [flying_twenty_best], [flying_twenty_z_score_best], [hand_size_best], [hand_size_z_score_best], [height_best], [height_z_score_best], [jump_broad_best], [jump_broad_power_sandy_best], [jump_broad_z_score_best], [jump_combined_best], [jump_vertical_best], [jump_vertical_power_best], [jump_vertical_power_kubiak_best], [jump_vertical_power_spags_best], [jump_vertical_z_score_best], [lateral_agility_score_best], [length_vertical_best], [length_vertical_with_jump_best], [momentum_forty_best], [momentum_ten_best], [momentum_twenty_best], [power_forty_best], [power_ten_best], [power_twenty_best], [ratio_arm_to_height_best], [ratio_wing_to_height_best], [shuttle_long_best], [shuttle_long_z_score_best], [shuttle_short_best], [shuttle_short_z_score_best], [speed_score_adjusted_best], [speed_score_barnwell_best], [speed_score_cohen_best], [test_score_best], [test_score_z_score_best], [three_cone_best], [three_cone_z_score_best], [velocity_forty_best], [velocity_ten_best], [velocity_twenty_best], [weight_best], [weight_z_score_best], [wingspan_best], [wingspan_z_score_best], [work_forty_sandy_best], [work_ten_sandy_best], [work_twenty_sandy_best])) AS pvt
-	 WHERE order_for_models = 1
-  ORDER BY player_id
-
---SELECT * FROM ##temp_measurables_for_modeling_elec
-
 -- Check if ##temp_measurables_for_modeling exists, if it does drop it
 IF OBJECT_ID('tempdb..##temp_measurables_for_modeling') IS NOT NULL
 	DROP TABLE ##temp_measurables_for_modeling
 
-    SELECT va.player_id
-          ,acceleration_forty_best_value
-          ,acceleration_ten_best_value
-          ,acceleration_twenty_best_value
-          ,arm_length_best_value
-          ,bench_reps_best_value
-		  ,bench_work_joules_best_value
-          ,bench_work_joules_z_score_best_value
-          ,body_mass_index_best_value
-          ,dash_forty_best_value
-          ,dash_ten_best_value
-          ,dash_twenty_best_value
-          ,dash_forty_z_score_best_value
-          ,dash_ten_z_score_best_value
-          ,dash_twenty_z_score_best_value
-          ,explosion_index_best_value
-          ,explosion_lower_best_value
-          ,flying_ten_z_score_best_value
-          ,flying_twenty_z_score_best_value
-          ,hand_size_best_value
-		  ,height_best_value
-		  ,CASE WHEN jump_broad_best_value IS NULL THEN 
-				CASE WHEN jump_vertical_best_value IS NOT NULL THEN 11.072070 + -0.034804*weight_best_value + 3.137752*height_best_value + -0.018183*POWER(height_best_value,2) + 1.048294*jump_vertical_best_value + -11.525730*dash_forty_best_value
-				     WHEN dash_forty_best_value IS NOT NULL THEN 75.874280 + -0.036159*weight_best_value + 3.607661*height_best_value + -0.021008*POWER(height_best_value,2) + -21.862388*dash_forty_best_value
-					 ELSE NULL
-				END
-				ELSE jump_broad_best_value
-		   END AS jump_broad_best_value 
-		  ,CASE WHEN jump_broad_best_value IS NULL THEN 
-				CASE WHEN jump_vertical_best_value IS NOT NULL OR dash_forty_best_value IS NOT NULL THEN 1 ELSE 0 END
-				ELSE 0
-		   END AS jump_broad_best_value_estimated
-
-		  ,CASE WHEN jump_vertical_best_value IS NULL THEN 
-				CASE WHEN jump_broad_best_value IS NOT NULL THEN  43.259658 + 0.008610*weight_best_value + -0.647521*height_best_value + 0.003779*POWER(height_best_value,2) + 0.281865*jump_broad_best_value + -3.686888*dash_forty_best_value
-				     WHEN dash_forty_best_value IS NOT NULL THEN 51.499810 + -0.003034*weight_best_value + 0.700107*height_best_value + -0.004344*POWER(height_best_value,2) + -9.612568*dash_forty_best_value
-					 ELSE NULL
-				END
-			    ELSE jump_vertical_best_value
-		   END AS jump_vertical_best_value		   
-		  ,CASE WHEN jump_vertical_best_value IS NULL THEN 
-				CASE WHEN jump_broad_best_value IS NOT NULL OR dash_forty_best_value IS NOT NULL THEN 1 ELSE 0 END
-				ELSE 0
-		   END AS jump_vertical_best_value_estimated 
---Need to recalculate these after joining to weight means
-          ,jump_broad_power_sandy_best_value
-          ,jump_broad_z_score_best_value
-          ,jump_vertical_power_best_value
-          ,jump_vertical_power_kubiak_best_value
-          ,jump_vertical_power_spags_best_value
-          ,jump_vertical_z_score_best_value
-		  ,length_vertical_with_jump_best_value
---Need to recalculate these after joining to weight means
-		  ,lateral_agility_score_best_value
-          ,length_vertical_best_value
-          ,power_forty_best_value
-          ,power_ten_best_value
-          ,power_twenty_best_value
-          ,ratio_arm_to_height_best_value
-		  ,CASE WHEN shuttle_long_best_value IS NULL THEN 
-				CASE WHEN shuttle_short_best_value IS NOT NULL THEN  3.647 + 0.004824*weight_best_value + -0.000006304*POWER(weight_best_value,2) + -0.006773*height_best_value + 1.083*shuttle_short_best_value + 0.6827*dash_forty_best_value
-				     WHEN dash_forty_best_value IS NOT NULL THEN 5.9629934 + 0.0026518*weight_best_value + -0.0071830*height_best_value + 1.2381365*dash_forty_best_value
-					 ELSE NULL
-				END
-				ELSE shuttle_long_best_value
-		   END AS shuttle_long_best_value 
-		  ,CASE WHEN shuttle_long_best_value IS NULL THEN 
-				CASE WHEN shuttle_short_best_value IS NOT NULL OR dash_forty_best_value IS NOT NULL THEN 1 ELSE 0 END
-				ELSE 0
-		   END AS shuttle_long_best_value_estimated
-		  ,CASE WHEN shuttle_short_best_value IS NULL THEN 
-				CASE WHEN dash_forty_best_value IS NOT NULL THEN 2.454 + -0.002729*weight_best_value + 0.000008657*POWER(weight_best_value,2) + -0.002102*height_best_value + 0.4750*dash_forty_best_value
-					 ELSE NULL
-				END
-				ELSE shuttle_short_best_value
-		   END AS shuttle_short_best_value
-		  ,CASE WHEN shuttle_short_best_value IS NULL THEN 
-				CASE WHEN dash_forty_best_value IS NOT NULL THEN 1 ELSE 0 END
-				ELSE 0
-		   END AS shuttle_short_best_value_estimated
-		  ,CASE WHEN three_cone_best_value IS NULL THEN 
-				CASE WHEN shuttle_short_best_value IS NOT NULL THEN 3.120 + -0.002465*weight_best_value + 0.000008991*POWER(weight_best_value,2) + -0.01337*height_best_value + 0.3692*dash_forty_best_value + 0.7711*shuttle_short_best_value
-				     WHEN dash_forty_best_value IS NOT NULL THEN 4.959 + -0.004962*weight_best_value + 0.00001597*POWER(weight_best_value,2) + -0.01511*height_best_value + 0.7649*dash_forty_best_value
-					 ELSE NULL
-				END
-				ELSE three_cone_best_value
-		   END AS three_cone_best_value
-		  ,CASE WHEN three_cone_best_value IS NULL THEN 
-				CASE WHEN shuttle_short_best_value IS NOT NULL OR dash_forty_best_value IS NOT NULL THEN 1 ELSE 0 END
-				ELSE 0
-		   END AS three_cone_best_value_estimated 
---Need to recalculate these after joining to weight means
-          ,shuttle_long_z_score_best_value
-          ,shuttle_short_z_score_best_value
-          ,speed_score_adjusted_best_value
-          ,speed_score_cohen_best_value
-          ,speed_score_barnwell_best_value
-          ,three_cone_z_score_best_value
---Need to recalculate these after joining to weight means
-          ,test_score_best_value
-          ,weight_best_value
-          ,work_forty_sandy_best_value
-          ,work_ten_sandy_best_value
-          ,work_twenty_sandy_best_value
+    SELECT player_id
+	       ,height
+	       ,[weight]
+	       ,dash_forty
+	       ,dash_twenty
+	       ,dash_ten
+	       ,shuttle_short
+	       ,three_cone
+	       ,shuttle_long
+	       ,flying_ten
+	       ,flying_twenty
+	       ,dash_forty_below_expected
+	       ,dash_forty_below_expected_pct
+	       ,dash_twenty_below_expected
+	       ,dash_twenty_below_expected_pct
+	       ,dash_ten_below_expected
+	       ,dash_ten_below_expected_pct
+	       ,flying_ten_below_expected
+	       ,flying_ten_below_expected_pct
+	       ,flying_twenty_below_expected
+	       ,flying_twenty_below_expected_pct
+	       ,COALESCE(shuttle_short_below_expected,0) AS shuttle_short_below_expected
+	       ,COALESCE(shuttle_short_below_expected_pct,0) AS shuttle_short_below_expected_pct
+	       ,COALESCE(shuttle_long_below_expected,0) AS shuttle_long_below_expected
+	       ,COALESCE(shuttle_long_below_expected_pct,0) AS shuttle_long_below_expected_pct
+	       ,COALESCE(three_cone_below_expected,0) AS three_cone_below_expected
+	       ,COALESCE(three_cone_below_expected_pct,0) AS three_cone_below_expected_pct
+	       ,arm_length
+	       ,wingspan
+	       ,hand_size
+	       ,jump_broad
+	       ,bench_reps
+	       ,jump_vertical
+	       ,test_score
+	       ,COALESCE(jump_vertical_above_expected,0) AS jump_vertical_above_expected
+	       ,COALESCE(jump_vertical_above_expected_pct,0) AS jump_vertical_above_expected_pct
+	       ,COALESCE(jump_broad_above_expected,0) AS jump_broad_above_expected
+	       ,COALESCE(jump_broad_above_expected_pct,0) AS jump_broad_above_expected_pct
+	       ,COALESCE(bench_reps_above_expected,0) AS bench_reps_above_expected
+	       ,COALESCE(bench_reps_above_expected_pct,0) AS bench_reps_above_expected_pct
 	  INTO ##temp_measurables_for_modeling
-	  FROM ##temp_measurables_for_modeling_values va
-INNER JOIN ##temp_measurables_for_modeling_elec el
-        ON va.player_id = el.player_id
-  ORDER BY va.player_id
+	  FROM ##temp_measurables_for_modeling_values
 
 --SELECT * FROM ##temp_measurables_for_modeling
 
-
-
--- Check if ##temp_measurables_for_modeling_with_z exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_measurables_for_modeling_with_z') IS NOT NULL
-	DROP TABLE ##temp_measurables_for_modeling_with_z
-
-    SELECT player_id
-          ,acceleration_forty_best_value
-          ,acceleration_ten_best_value
-          ,acceleration_twenty_best_value
-          ,arm_length_best_value
-          ,bench_reps_best_value
-		  ,bench_work_joules_best_value
-          ,bench_work_joules_z_score_best_value
-          ,body_mass_index_best_value
-          ,dash_forty_z_score_best_value
-          ,dash_ten_z_score_best_value
-          ,dash_twenty_z_score_best_value
-          ,explosion_index_best_value
-          ,explosion_lower_best_value
-          ,flying_ten_z_score_best_value
-          ,flying_twenty_z_score_best_value
-          ,hand_size_best_value
-		  ,jump_broad_best_value 
-		  ,jump_broad_best_value_estimated
-		  ,jump_vertical_best_value		   	   
-		  ,jump_vertical_best_value_estimated
-		  ,height_best_value
-          ,CASE WHEN jump_broad_power_sandy_best_value IS NULL THEN CASE WHEN jump_broad_best_value>0 THEN 4*SQRT(2)*weight_best_value*SQRT(jump_broad_best_value/12) ELSE NULL END ELSE jump_broad_power_sandy_best_value END AS jump_broad_power_sandy_best_value
-		  ,CASE WHEN jump_broad_z_score_best_value IS NULL THEN (jump_broad_best_value - jump_broad_mean) / jump_broad_stdev ELSE jump_broad_z_score_best_value END AS jump_broad_z_score_best_value
-		  ,CASE WHEN jump_vertical_power_best_value IS NULL THEN (60.7*jump_vertical_best_value*2.54) + (45.3*weight_best_value*0.453595) - 2055 ELSE jump_vertical_power_best_value END AS jump_vertical_power_best_value
-          ,CASE WHEN jump_vertical_power_kubiak_best_value IS NULL THEN 8*weight_best_value*SQRT(jump_vertical_best_value/12) ELSE jump_vertical_power_kubiak_best_value END AS jump_vertical_power_kubiak_best_value
-          ,CASE WHEN jump_vertical_power_spags_best_value IS NULL THEN SQRT(weight_best_value)*SQRT(jump_vertical_best_value) ELSE jump_vertical_power_spags_best_value END AS jump_vertical_power_spags_best_value
-		  ,CASE WHEN jump_vertical_z_score_best_value IS NULL THEN (jump_vertical_best_value - jump_vertical_mean) / jump_vertical_stdev ELSE jump_vertical_z_score_best_value END AS jump_vertical_z_score_best_value
-		  ,CASE WHEN length_vertical_with_jump_best_value IS NULL THEN height_best_value + arm_length_best_value + jump_vertical_best_value ELSE length_vertical_with_jump_best_value END AS length_vertical_with_jump_best_value
-		  ,lateral_agility_score_best_value
-          ,length_vertical_best_value
-          ,power_forty_best_value
-          ,power_ten_best_value
-          ,power_twenty_best_value
-          ,ratio_arm_to_height_best_value
-		  ,shuttle_long_best_value 
-		  ,shuttle_long_best_value_estimated
-		  ,shuttle_short_best_value
-		  ,shuttle_short_best_value_estimated
-		  ,three_cone_best_value
-		  ,three_cone_best_value_estimated 
-		  ,CASE WHEN shuttle_short_z_score_best_value IS NULL THEN (shuttle_short_best_value - shuttle_short_mean) / shuttle_short_stdev ELSE shuttle_short_z_score_best_value END AS shuttle_short_z_score_best_value
-		  ,CASE WHEN shuttle_long_z_score_best_value IS NULL THEN (shuttle_long_best_value - shuttle_long_mean) / shuttle_long_stdev ELSE shuttle_long_z_score_best_value END AS shuttle_long_z_score_best_value
-          ,CASE WHEN speed_score_adjusted_best_value IS NULL THEN (weight_best_value * 125)/(dash_forty_best_value*dash_ten_best_value*shuttle_short_best_value*three_cone_best_value) ELSE speed_score_adjusted_best_value END AS speed_score_adjusted_best_value
-		  ,CASE WHEN three_cone_z_score_best_value IS NULL THEN (three_cone_best_value - three_cone_mean) / three_cone_stdev ELSE three_cone_z_score_best_value END AS three_cone_z_score_best_value
-          ,speed_score_barnwell_best_value
-		  ,speed_score_cohen_best_value
-          ,test_score_best_value
-          ,weight_best_value
-          ,work_forty_sandy_best_value
-          ,work_ten_sandy_best_value
-          ,work_twenty_sandy_best_value
-	  INTO ##temp_measurables_for_modeling_with_z
-	  FROM ##temp_measurables_for_modeling ma
- LEFT JOIN ##temp_measures_avg_stdev_weight wt
-        ON ma.[weight_best_value] = wt.[weight]
- LEFT JOIN ##temp_runs_avg_stdev ru
-        ON ma.[weight_best_value] = ru.[weight]
-
---SELECT * FROM ##temp_measurables_for_modeling_with_z
+SELECT old.[player_id]
+      ,[position_draft_board]
+      ,[acceleration_forty_best_value]
+      ,[acceleration_ten_best_value]
+      ,[acceleration_twenty_best_value]
+      ,[arm_length_best_value]
+      ,[bench_reps_best_value]
+      ,[bench_work_joules_best_value]
+      ,[bench_work_joules_z_score_best_value]
+      ,[body_mass_index_best_value]
+      ,[dash_forty_z_score_best_value]
+      ,[dash_ten_z_score_best_value]
+      ,[dash_twenty_z_score_best_value]
+      ,[explosion_index_best_value]
+      ,[explosion_lower_best_value]
+      ,[flying_ten_z_score_best_value]
+      ,[flying_twenty_z_score_best_value]
+      ,[hand_size_best_value]
+      ,[jump_broad_best_value]
+      ,[jump_broad_best_value_estimated]
+      ,[jump_vertical_best_value]
+      ,[jump_vertical_best_value_estimated]
+      ,[height_best_value]
+      ,[jump_broad_power_sandy_best_value]
+      ,[jump_broad_z_score_best_value]
+      ,[jump_vertical_power_best_value]
+      ,[jump_vertical_power_kubiak_best_value]
+      ,[jump_vertical_power_spags_best_value]
+      ,[jump_vertical_z_score_best_value]
+      ,[length_vertical_with_jump_best_value]
+      ,[lateral_agility_score_best_value]
+      ,[length_vertical_best_value]
+      ,[power_forty_best_value]
+      ,[power_ten_best_value]
+      ,[power_twenty_best_value]
+      ,[ratio_arm_to_height_best_value]
+      ,[shuttle_long_best_value]
+      ,[shuttle_long_best_value_estimated]
+      ,[shuttle_short_best_value]
+      ,[shuttle_short_best_value_estimated]
+      ,[three_cone_best_value]
+      ,[three_cone_best_value_estimated]
+      ,[shuttle_short_z_score_best_value]
+      ,[shuttle_long_z_score_best_value]
+      ,[speed_score_adjusted_best_value]
+      ,[three_cone_z_score_best_value]
+      ,[speed_score_barnwell_best_value]
+      ,[speed_score_cohen_best_value]
+      ,[test_score_best_value]
+      ,[weight_best_value]
+      ,[work_forty_sandy_best_value]
+      ,[work_ten_sandy_best_value]
+      ,[work_twenty_sandy_best_value]
+      ,2016 AS[season]
+      ,[grade_scaled]
+      --,[grade_college_mean]
+	       ,dash_forty
+	       ,dash_twenty
+	       ,dash_ten
+	       ,shuttle_short
+	       ,three_cone
+	       ,shuttle_long
+	       ,flying_ten
+	       ,flying_twenty
+	       ,dash_forty_below_expected
+	       ,dash_forty_below_expected_pct
+	       ,dash_twenty_below_expected
+	       ,dash_twenty_below_expected_pct
+	       ,dash_ten_below_expected
+	       ,dash_ten_below_expected_pct
+	       ,flying_ten_below_expected
+	       ,flying_ten_below_expected_pct
+	       ,flying_twenty_below_expected
+	       ,flying_twenty_below_expected_pct
+	       ,shuttle_short_below_expected
+	       ,shuttle_short_below_expected_pct
+	       ,shuttle_long_below_expected
+	       ,shuttle_long_below_expected_pct
+	       ,three_cone_below_expected
+	       ,three_cone_below_expected_pct
+	       ,jump_vertical_above_expected
+	       ,jump_vertical_above_expected_pct
+	       ,jump_broad_above_expected
+	       ,jump_broad_above_expected_pct
+	       ,bench_reps_above_expected
+	       ,bench_reps_above_expected_pct
+  INTO [AnalyticsWork].[dbo].[draft2016_measurables_e_to_model_pre]
+  FROM [AnalyticsWork].[dbo].[draft2016_measurables_to_model_pre2016] old
+  left join ##temp_measurables_for_modeling m
+  on old.player_id=m.player_id
 
 
 
@@ -3044,10 +1841,10 @@ IF OBJECT_ID('tempdb..##temp_pro_grades_scout') IS NOT NULL
 				ELSE NULL
 		   END AS grade_scaled	
 	  INTO ##temp_pro_grades_scout
-      FROM [bane_production_analytics].[dbo].[reports] re
- LEFT JOIN [bane_production_analytics].[dbo].[grades] gr
+      FROM [BaneProductionAnalytics].[dbo].[reports] re
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[grades] gr
         ON re.grade_id=gr.id	
- LEFT JOIN [bane_production_analytics].[dbo].[players] pl
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[players] pl
         ON re.player_id=pl.id  
 	 WHERE 1=1
 	   AND UPPER(LTRIM(RTRIM(re.[type]))) IN ('ABILITY FOR RAVENS','GAME ADVANCE','QUARTERLY')
@@ -3090,7 +1887,7 @@ IF OBJECT_ID('tempdb..##temp_pro_grades_model') IS NOT NULL
 		  ,ProGradeFit AS grade_scaled
 	  INTO ##temp_pro_grades_model
       FROM [AnalyticsWork].[dbo].[model_pro_grades] mo
- LEFT JOIN [bane_production_analytics].[dbo].[players] pl
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[players] pl
         ON mo.PlayerID=pl.nfl_id  
 
 --SELECT * FROM ##temp_pro_grades_model
@@ -3233,9 +2030,9 @@ IF OBJECT_ID('tempdb..##temp_measurables_with_pro_grades') IS NOT NULL
 	  FROM ##temp_measurables_for_modeling_with_z me
  LEFT JOIN ##temp_pro_grades_season pg
         ON pg.player_id = me.player_id
-INNER JOIN [bane_production_analytics].[dbo].[players] pl
+INNER JOIN [BaneProductionAnalytics].[dbo].[players] pl
         ON me.player_id = pl.id
- LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[positions] pos
         ON pl.position_id = pos.id
  LEFT JOIN ##temp_draft_board_positions_with_order dbg
         ON me.player_id = dbg.player_id
@@ -3269,13 +2066,13 @@ select distinct m.player_id
 	  ,CASE WHEN p4.nfl_entry_year>=2006 THEN p4.nfl_entry_year+3 ELSE NULL END as fourth_season
 into ##temp_seasons
 from ##temp_measurables_with_pro_grades m
-inner join [bane_production_analytics].[dbo].[players] p1
+inner join [BaneProductionAnalytics].[dbo].[players] p1
 on m.player_id=p1.id
-inner join [bane_production_analytics].[dbo].[players] p2
+inner join [BaneProductionAnalytics].[dbo].[players] p2
 on p1.id=p2.id
-inner join [bane_production_analytics].[dbo].[players] p3
+inner join [BaneProductionAnalytics].[dbo].[players] p3
 on p1.id=p3.id
-inner join [bane_production_analytics].[dbo].[players] p4
+inner join [BaneProductionAnalytics].[dbo].[players] p4
 on p1.id=p4.id
 order by m.player_id
 
@@ -3369,10 +2166,10 @@ on cg.player_id=m.player_id
 select Player_id, count(player_id) as pcount into ##temp_check from ##temp_all a 
 group by player_id
 
-select c.*, nfl_entry_year from ##temp_check c inner join [bane_production_analytics].[dbo].[players] p1
+select c.*, nfl_entry_year from ##temp_check c inner join [BaneProductionAnalytics].[dbo].[players] p1
 on c.player_id=p1.id
 
-select * from [bane_production_analytics].[dbo].[players] p1 where last_name='Kindle' and first_name='Sergio'
+select * from [BaneProductionAnalytics].[dbo].[players] p1 where last_name='Kindle' and first_name='Sergio'
 
 
 
@@ -3473,9 +2270,9 @@ LEFT JOIN ##temp_runs_best_z w3
 	    ON w1.player_id=w3.player_id
 	   AND w3.workout_type_for_models=4
 
-INNER JOIN [bane_production_analytics].[dbo].[players] pl
+INNER JOIN [BaneProductionAnalytics].[dbo].[players] pl
         ON w1.player_id = pl.id
- LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[positions] pos
         ON pl.position_id = pos.id
  LEFT JOIN ##temp_draft_board_positions_with_order dbg
         ON w1.player_id = dbg.player_id
@@ -3498,7 +2295,7 @@ INNER JOIN [bane_production_analytics].[dbo].[players] pl
 
 SELECT z.* , last_name, first_name
 FROM ##temp_runs_best_z z
-INNER JOIN [bane_production_analytics].[dbo].[players] pl
+INNER JOIN [BaneProductionAnalytics].[dbo].[players] pl
         ON z.player_id = pl.id
 
 
