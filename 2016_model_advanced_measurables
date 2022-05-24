@@ -1,0 +1,118 @@
+-- Check if temp_all_measurables exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_all_measurables') IS NOT NULL
+	DROP TABLE ##temp_all_measurables
+
+    SELECT workouts.id AS workout_id
+	      ,workouts.[date] as workout_date
+		  ,workouts.[description] as workout_description
+	      ,workouts.player_id
+		  ,workouts.nfl_player_id
+		  ,workouts.college_player_id
+		  ,measurables.measurable_type_id
+		  ,meastypes.code
+		  ,measurables.value
+	  INTO ##temp_all_measurables
+      FROM [bane-development].[dbo].[workouts] workouts
+INNER JOIN [bane-development].[dbo].[measurables] measurables
+        ON workouts.id=measurables.workout_id
+INNER JOIN [bane-development].[dbo].[measurable_types] meastypes
+		ON measurables.measurable_type_id=meastypes.id
+INNER JOIN [bane-development].[dbo].[player_workout_types] worktype
+		ON workouts.player_workout_type_id=worktype.id
+	 WHERE worktype.[priority]<=10
+
+-- Check if temp_all_measurables_pivot exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_all_measurables_pivot') IS NOT NULL
+	DROP TABLE ##temp_all_measurables_pivot
+
+    SELECT workout_id
+		  ,workout_date
+		  ,workout_description
+	      ,player_id
+	      ,HgtCnv AS height_converted
+	      ,Wgt AS weight
+	      ,ArmLngCnv AS arm_length_converted
+	      ,WSpanCnv AS wing_span_converted
+	      ,HSpanCnv AS hand_span_converted
+	      ,[40YTime] AS forty_time
+	      ,[20YTime] AS twenty_time
+	      ,[10YTime] AS ten_time
+	      ,VertJumpCnv AS vertical_jump_converted
+	      ,BroadJumpCnv AS broad_jump_converted
+	      ,[20YShuttle] AS short_shuttle
+	      ,[3Cone] AS three_cone
+	      ,[60YShuttle] AS long_shuttle
+	      ,StrengthReps225 AS bench_reps
+	  --INTO ##temp_all_measurables_pivot
+      FROM (
+    SELECT workout_id
+	      ,player_id
+		  ,code
+		  ,value
+      FROM ##temp_all_measurables) up
+     PIVOT (MAX(value) FOR code IN (HgtCnv, Wgt, ArmLngCnv, WSpanCnv, HSpanCnv, [40YTime], [20YTime], [10YTime], VertJumpCnv, BroadJumpCnv, [20YShuttle], [3Cone], [60YShuttle], StrengthReps225)) AS pvt
+  ORDER BY workout_id, player_id
+
+
+
+
+  -- Check if temp_all_measurables_pivot_with_extras exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_all_measurables_pivot_with_extras') IS NOT NULL
+	DROP TABLE ##temp_all_measurables_pivot_with_extras
+
+    SELECT workout_id
+	      ,player_id
+          ,vertical_jump_converted+(broad_jump_converted/12)+bench_reps AS kirwan_explosion_index
+          ,forty_time-short_shuttle AS lateral_agility_score
+          ,([weight]*200)/POWER(forty_time,4) AS barnwell_speed_score
+          ,([weight] * 125)/(forty_time *ten_time*short_shuttle*three_cone) AS speed_score_adjusted
+          ,(vertical_jump_converted+3.5*broad_jump_converted)*([weight]/height_converted)/3000 AS lower_explosion
+          ,forty_time-twenty_time AS flying_twenty_time
+          ,twenty_time-ten_time AS flying_ten_time
+          --for below equation, 225 lbs = 100 kg , 9.8 m/s is the force of gravity, 0.0254 inches in a meter
+          ,((100*9.8)/(arm_length_converted*0.0254))*bench_reps AS bench_work_joules
+          --divide the above by the time it takes him to do his reps to get bench_watts (not jj)
+
+		  --1 pound=0.453595 kilograms
+		  --1 yard = 0.9144 meters
+		  --s=v0t+1/2at^2
+		  ,2*(10*0.9144)/POWER(ten_time,2) AS ten_acceleration
+          ,2*(10*0.9144)/ten_time AS ten_velocity 
+		  --momentum is mass times velocity
+		  ,([weight]*0.453592)*(2*(10*0.9144)/ten_time) AS ten_momentum 
+		  --work is force times distance, force is mass times acceleration  
+		  ,([weight]*0.453592)*POWER((2*(10*0.9144)/ten_time),2)*10 AS ten_work
+
+		  ,2*(10-((2*(10*0.9144)/ten_time)*(twenty_time-ten_time)))/POWER((twenty_time-ten_time),2) AS twenty_acceleration
+		  ,2*(10-((2*(10*0.9144)/ten_time)*(twenty_time-ten_time)))/(twenty_time-ten_time) AS twenty_velocity 
+		  --momentum is mass times velocity
+          ,([weight]*0.453592)*(2*(10-((2*(10*0.9144)/ten_time)*(twenty_time-ten_time)))/(twenty_time-ten_time)) AS twenty_momentum
+		  --work is force times distance, force is mass times acceleration 
+		  ,([weight]*0.453592)*(2*(10-((2*(10*0.9144)/ten_time)*(twenty_time-ten_time)))/POWER((twenty_time-ten_time),2))*10 AS twenty_work
+
+		  ,2*(20-(2*(10-((2*(10*0.9144)/ten_time)*(twenty_time-ten_time)))/(twenty_time-ten_time)))/POWER(forty_time-twenty_time,2) AS forty_acceleration 	
+		  ,2*(20-(2*(10-((2*(10*0.9144)/ten_time)*(twenty_time-ten_time)))/(twenty_time-ten_time)))/(forty_time-twenty_time) AS forty_velocity
+		  --momentum is mass times velocity
+          ,([weight]*0.453592)*(2*(20-(2*(10-((2*(10*0.9144)/ten_time)*(twenty_time-ten_time)))/(twenty_time-ten_time)))/(forty_time-twenty_time)) AS forty_momentum
+		  --work is force times distance, force is mass times acceleration 
+		  ,([weight]*0.453592)*(2*(20-(2*(10-((2*(10*0.9144)/ten_time)*(twenty_time-ten_time)))/(twenty_time-ten_time)))/POWER(forty_time-twenty_time,2))*20 AS forty_work
+		  --vertical jump power equation is 60.7*jump (in cm) + 45.3*[weight] (in kg) - 2055
+          ,(60.7*vertical_jump_converted*2.54) + (45.3*([weight]*0.453592)) - 2055 AS vertical_jump_power
+		  --i dont know where the below equation comes from, it was in sandy's code
+		  ,8*[weight]*SQRT(vertical_jump_converted/12) AS vertical_jump_power_sandy
+		  --the next one is the formula Spagnuolo used for judging explosion from the jump
+		  ,SQRT([weight])*SQRT(vertical_jump_converted) AS vertical_jump_power_spagnuolo
+		  --i don't know where the below equation comes from, it was in sandy's code
+		  ,4*SQRT(2)*[weight]*sQRT(broad_jump_converted/12) AS broad_jump_power_sandy
+		  --i don't know the logic behind it but sandy also had a combined jump variable
+		  ,(vertical_jump_converted+broad_jump_converted)/2 AS combined_jump_converted
+		  ,height_converted + arm_length_converted AS vertical_length
+		  ,height_converted + arm_length_converted + vertical_jump_converted AS vertical_length_with_jump
+		  ,arm_length_converted*2/height_converted AS arm_length_to_height_ratio
+		  ,wing_span_converted/height_converted AS wingspan_to_height_ratio
+		  ,POWER(arm_length_converted,2) AS arm_radius_converted
+		  ,730*[weight]/height_converted AS body_mass_index
+		  --haven't been able to figure out the exact SPARQ formula yet, this is a "best guess" based on other efforts to nail down the formula
+		  ,161.1768022+([weight]*0.3114693)+(forty_time*-10.72725617)+(ten_time*-41.89231102)+(short_shuttle*-16.15717599)+(three_cone*-6.981575131)+(bench_reps*0.477821711)+(vertical_jump_converted*1.266893465)+(broad_jump_converted/12*6.691568906) as sparq_estimate
+	     INTO ##temp_all_measurables_pivot_with_extras
+         FROM ##temp_all_measurables_pivot
