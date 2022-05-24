@@ -7,32 +7,64 @@ This is the code for creating a list comparing Scout Grades to Model Grades for 
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
+
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Create the draft board grade table.
+Get down to one row of draft board grade. Take a players draft
+board grade from as late in the process as available. 
+
+When doing this after Feb meetings, switch the order so POST-FEB is 1 in order by.
 
 OUTPUT TABLES:
-#temp_board_grades
+#temp_draft_board_grades_latest
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
--- Check if #temp_board_grades exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_board_grades') IS NOT NULL
-	DROP TABLE #temp_board_grades
+-- Check if #temp_draft_board_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_grades') IS NOT NULL
+	DROP TABLE #temp_draft_board_grades
 
-    SELECT bane_player_id
-		  ,player
-		  ,position
-		  ,grade AS board_grade
-		  ,early_entrant
-	  INTO #temp_board_grades
-      FROM AnalyticsScouting.dbo.draft_board_2017_december
+	SELECT player_id AS bane_player_id
+		,legacy_grade
+		,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 3
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 1
+			ELSE 999
+		END AS order_by
+	INTO #temp_draft_board_grades
+	FROM [BaneProductionAnalytics].[dbo].[draft_board_grades]
+	WHERE legacy_grade != '' AND legacy_grade IS NOT NULL
+		AND player_id <> 64668
+
+
+-- Check if #temp_draft_board_grades_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_grades_with_order') IS NOT NULL
+	DROP TABLE #temp_draft_board_grades_with_order
+
+	SELECT bane_player_id
+		,legacy_grade AS board_grade
+		,RANK() OVER (PARTITION BY bane_player_id ORDER BY order_by) AS draft_board_grade_order
+	INTO #temp_draft_board_grades_with_order
+	FROM #temp_draft_board_grades
 
 /*
 SELECT *
-FROM #temp_board_grades
-WHERE bane_player_id = 223342
-*/	
+FROM #temp_draft_board_grades_with_order
+*/
+
+-- Check if #temp_draft_board_grades_latest exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_grades_latest') IS NOT NULL
+	DROP TABLE #temp_draft_board_grades_latest
+
+	SELECT *
+	INTO #temp_draft_board_grades_latest
+	FROM #temp_draft_board_grades_with_order
+	WHERE draft_board_grade_order = 1
+
+/*
+SELECT *
+FROM #temp_draft_board_grades_latest
+*/
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -51,65 +83,50 @@ SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_y
 IF OBJECT_ID('tempdb..#temp_max_grades') IS NOT NULL
 	DROP TABLE #temp_max_grades
 
-    SELECT player_id AS bane_player_id
-	      ,CONCAT(pl.last_name,', ',pl.goes_by) AS player
-		  ,translation AS position
-		  ,CASE WHEN pl.nfl_entry_year <= @current_season THEN pl.nfl_entry_year
-				WHEN pl.nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
-				ELSE NULL
-		   END AS nfl_entry_year
-		  ,sc.code AS college
-		  ,COUNT(re.id) AS report_count
-		  ,MAX(CAST(gr.value AS NUMERIC (3,1))) AS grade_bucket
-          ,CASE WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (8.0) THEN 100
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (7.0) THEN 92
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (6.9) THEN 82
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (6.7,6.5) THEN 71
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (6.3) THEN 64
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (6.1,6.0) THEN 58
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (5.9) THEN 53.5
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (5.8) THEN 50
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (5.7) THEN 47
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (5.6) THEN 45.5
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (5.4) THEN 43
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (5.2) THEN 41
-                WHEN MAX(CAST(gr.value AS NUMERIC (3,1))) IN (5.0) THEN 40
-                ELSE NULL
-           END AS grade_value            
-	  INTO #temp_max_grades
-      FROM [BaneProductionAnalytics].[dbo].[reports] re
-INNER JOIN [BaneProductionAnalytics].[dbo].[taggings] t 
+	SELECT player_id AS bane_player_id
+		,CONCAT(pl.last_name,', ',pl.goes_by) AS player
+		,translation AS position
+		,CASE WHEN pl.draft_year <= @current_season THEN pl.draft_year
+			WHEN pl.draft_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
+			ELSE NULL
+		END AS draft_year
+		,sc.code AS college
+		,COUNT(re.id) AS report_count
+		,MAX(CAST(gr.value AS NUMERIC (3,1))) AS grade_bucket       
+	INTO #temp_max_grades
+	FROM [BaneProductionAnalytics].[dbo].[reports] re
+	INNER JOIN [BaneProductionAnalytics].[dbo].[taggings] t 
 		ON t.taggable_id = re.id 
-	   AND UPPER(t.taggable_type) = 'REPORT'
-	   AND t.tag_id = 11 --(it is a college report)
-INNER JOIN [BaneProductionAnalytics].[dbo].[players] pl 
-        ON re.player_id = pl.id
-	   AND pl.is_deleted = 0
- LEFT JOIN [BaneProductionAnalytics].[dbo].[grades] gr
+		AND UPPER(t.taggable_type) = 'REPORT'
+		AND t.tag_id = 11 --(it is a college report)
+	INNER JOIN [BaneProductionAnalytics].[dbo].[players] pl 
+		ON re.player_id = pl.id
+		AND pl.is_deleted = 0
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[grades] gr
 		ON re.grade_id=gr.id
- LEFT JOIN [BaneProductionAnalytics].[dbo].[users] us
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[users] us
 		ON re.author_id=us.id    
- LEFT JOIN [BaneProductionAnalytics].[dbo].[positions] po
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[positions] po
 		ON pl.position_id = po.id      
- LEFT JOIN [BaneProductionAnalytics].[dbo].[schools] sc
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[schools] sc
 		ON pl.ncaa_club_id = sc.id     
-     WHERE 1=1
-       AND re.is_deleted = 0
-	   AND UPPER(us.[type]) NOT LIKE '%COACH%'  
-	   AND re.[type] IN ('fall','cross-check')
-	   AND translation NOT IN ('ST','PK','PT','LS')
-       AND gr.scale_id IN (4,6) --(it is an overall grade)
-	   AND (MONTH(re.created_at) IN (6,7,8,9,10,11,12,1) OR (MONTH(re.created_at) = 2 AND DAY(re.created_at) < 16))
-	   AND nfl_entry_year >= 2005
-	   AND nfl_entry_year <= @current_season + 2
-  GROUP BY player_id
-	      ,CONCAT(pl.last_name,', ',pl.goes_by)
-		  ,translation
-		  ,CASE WHEN pl.nfl_entry_year <= @current_season THEN pl.nfl_entry_year
-				WHEN pl.nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
+	WHERE 1=1
+		AND re.is_deleted = 0
+		AND UPPER(us.[type]) NOT LIKE '%COACH%'  
+		AND re.[type] IN ('fall','cross-check')
+		AND translation NOT IN ('ST','PK','PT','LS')
+		AND gr.scale_id IN (4,6) --(it is an overall grade)
+		AND (MONTH(re.created_at) IN (6,7,8,9,10,11,12,1) OR (MONTH(re.created_at) = 2 AND DAY(re.created_at) < 16))
+		AND draft_year >= 2005
+		AND draft_year <= @current_season + 2
+		GROUP BY player_id
+			,CONCAT(pl.last_name,', ',pl.goes_by)
+			,translation
+			,CASE WHEN pl.draft_year <= @current_season THEN pl.draft_year
+				WHEN pl.draft_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
 				ELSE NULL
-		   END
-		  ,sc.code
+			END
+			,sc.code
 
 /*
 SELECT *
@@ -132,16 +149,16 @@ OUTPUT TABLES:
 IF OBJECT_ID('tempdb..#temp_scout_grades') IS NOT NULL
 	DROP TABLE #temp_scout_grades
 
-    SELECT mg.bane_player_id
-		  ,mg.player
-		  ,mg.position
-		  ,mg.nfl_entry_year
-		  ,mg.college
-		  ,report_count
-		  ,COALESCE(board_grade,grade_bucket) AS scout_grade
-	  INTO #temp_scout_grades
-      FROM #temp_max_grades mg
- LEFT JOIN #temp_board_grades bg
+	SELECT mg.bane_player_id
+		,mg.player
+		,mg.position
+		,mg.draft_year
+		,mg.college
+		,report_count
+		,COALESCE(board_grade,grade_bucket) AS scout_grade
+	INTO #temp_scout_grades
+	FROM #temp_max_grades mg
+	LEFT JOIN #temp_draft_board_grades_latest bg
 		ON mg.bane_player_id = bg.bane_player_id
 
 /*
@@ -164,15 +181,39 @@ OUTPUT TABLES:
 IF OBJECT_ID('tempdb..#temp_equivalent_games') IS NOT NULL
 	DROP TABLE #temp_equivalent_games
 
-    SELECT pl.id AS bane_player_id
-		  ,SUM(equivalent_games) AS equivalent_games
-	  INTO #temp_equivalent_games
-      FROM Analytics.dbo.stage_players_season_playtime pt
-INNER JOIN BaneProductionAnalytics.dbo.players pl
+	SELECT pl.id AS bane_player_id
+		,SUM(equivalent_games) AS equivalent_games
+	INTO #temp_equivalent_games
+	FROM Analytics.dbo.stage_players_season_playtime pt
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON pt.nfl_player_id = pl.nfl_id
-	   AND pl.is_deleted = 0
-	 WHERE season_type = 'REG'
- GROUP BY pl.id
+		AND pl.is_deleted = 0
+	WHERE season_type = 'REG'
+	GROUP BY pl.id
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create a table with a max model grade for any potential duplicates.
+
+OUTPUT TABLES:
+#temp_model_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+	-- Check if #temp_model_grades exists, if it does drop it
+	IF OBJECT_ID('tempdb..#temp_model_grades') IS NOT NULL
+	DROP TABLE #temp_model_grades
+
+	SELECT bane_player_id
+		,MAX(overall_grade) AS model_grade
+		,MAX(overall_number) AS model_score
+	INTO #temp_model_grades
+	FROM AnalyticsWork.dbo.draft_model_pre_combine_overall_scores mo
+	WHERE secondary_position = 0
+		AND model_type = 'PMC'
+		AND draft_model_year = 2019
+	GROUP BY bane_player_id
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -184,38 +225,22 @@ OUTPUT TABLES:
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
--- Check if #temp_grades_comparison exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_grades_comparison') IS NOT NULL
+	-- Check if #temp_grades_comparison exists, if it does drop it
+	IF OBJECT_ID('tempdb..#temp_grades_comparison') IS NOT NULL
 	DROP TABLE #temp_grades_comparison
 
-    SELECT sg.*
-	      ,COALESCE(equivalent_games,0) AS equivalent_games
-		  ,CASE WHEN COALESCE(equivalent_games,0) > 0 THEN 1 ELSE 0 END AS played_in_nfl_game
-		  ,mo.final_grade_grade AS model_grade_ravens
-		  ,bl.grade_grade AS model_grade_lotter
-		  ,CASE WHEN mo.final_grade_grade >= 6.7 AND bl.grade_grade <= 5.7 THEN 6.1
-			    WHEN mo.final_grade_grade >= 6.7 AND bl.grade_grade <= 5.8 THEN 6.3
-			    WHEN mo.final_grade_grade >= 6.3 AND bl.grade_grade <= 5.8 THEN 6.1
-				WHEN mo.final_grade_grade >= 6.3 AND bl.grade_grade <= 5.7 THEN 5.9
-				WHEN mo.final_grade_grade <= 5.7 AND bl.grade_grade >= 6.7 THEN 6.1
-				WHEN mo.final_grade_grade <= 5.8 AND bl.grade_grade >= 6.7 THEN 6.3
-				WHEN mo.final_grade_grade <= 5.8 AND bl.grade_grade >= 6.3 THEN 6.1
-				WHEN mo.final_grade_grade <= 5.7 AND bl.grade_grade >= 6.3 THEN 5.9
-		        ELSE (SELECT MAX(grade) FROM (VALUES (mo.final_grade_grade),(bl.grade_grade)) AS AllGrades(grade)) 
-		   END AS model_grade
-		  ,final_number AS model_score
-		  ,mean_grade
-	  INTO #temp_grades_comparison
-      FROM #temp_scout_grades sg 
- LEFT JOIN #temp_equivalent_games eq
+	SELECT sg.*
+		,COALESCE(equivalent_games,0) AS equivalent_games
+		,CASE WHEN COALESCE(equivalent_games,0) > 0 THEN 1 ELSE 0 END AS played_in_nfl_game
+		,model_grade
+		,model_score
+	--INTO #temp_grades_comparison
+	FROM #temp_scout_grades sg 
+	LEFT JOIN #temp_equivalent_games eq
 		ON sg.bane_player_id = eq.bane_player_id
- LEFT JOIN AnalyticsWork.dbo.draft2017_bill_precombine_model_historical_predictions bl
-		ON sg.bane_player_id = bl.player_id
- LEFT JOIN AnalyticsWork.dbo.draft2017_precombine_model_historical_grades mo
+	LEFT JOIN #temp_model_grades mo
 		ON sg.bane_player_id = mo.bane_player_id
-	   AND CASE WHEN sg.position = 'WR' THEN 'WO' 
-				WHEN sg.position = 'RB' THEN 'OH'
-				ELSE sg.position END = mo.position
+
 
 /*
 SELECT *
