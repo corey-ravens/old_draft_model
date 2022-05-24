@@ -152,6 +152,7 @@ IF OBJECT_ID('tempdb..#temp_overall_grades') IS NOT NULL
 		,author_id AS scout_id
 		,re.created_at AS report_date
 		,CASE WHEN re.created_at >= '05/01/2017' THEN 'NEW' ELSE 'OLD' END AS grade_distribution
+		,re.[type] AS report_type
 		,player_id AS bane_player_id
 		,CASE WHEN re.position_id IS NULL THEN 'NONE' ELSE CASE WHEN po.abbreviation = 'DE43' THEN 'OB' ELSE translation END END AS position_report
 		,CASE WHEN CAST(gr.value AS NUMERIC (3,1)) IN (8.0) THEN 100
@@ -169,7 +170,7 @@ IF OBJECT_ID('tempdb..#temp_overall_grades') IS NOT NULL
 			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.0) THEN 40
 			ELSE NULL
 		END AS [value]
-		,CAST(gr.value AS NUMERIC (3,1)) AS bucket  
+		,CAST(gr.value AS NUMERIC (3,1)) AS bucket
 	INTO #temp_overall_grades
 	FROM [BaneProductionAnalytics].[dbo].[reports] re
 	INNER JOIN [BaneProductionAnalytics].[dbo].[taggings] t 
@@ -190,10 +191,11 @@ IF OBJECT_ID('tempdb..#temp_overall_grades') IS NOT NULL
 		AND UPPER(re.[type]) <> 'SPECIAL TEAMS' 
 		AND translation NOT IN ('ST','PK','PT','LS')
 		AND gr.scale_id IN (4,6) --(it is an overall grade)
-		AND re.[type] IN ('fall','spring','all star game','cross-check')
+		AND re.[type] IN ('fall','cross-check')
 		AND (MONTH(re.created_at) IN (6,7,8,9,10,11,12,1) OR (MONTH(re.created_at) = 2 AND DAY(re.created_at) < 16))
 		AND draft_year >= 2005
 		AND draft_year <= @jSeason + 2
+		AND us.id <> 72
 	ORDER BY re.id
 		,gr.id
 
@@ -324,10 +326,11 @@ IF OBJECT_ID('tempdb..#temp_component_grades') IS NOT NULL
 		AND UPPER(re.[type]) <> 'SPECIAL TEAMS' 
 		AND translation NOT IN ('ST','PK','PT','LS')
 		AND gr.scale_id = 5 --(it is a 3-7 component grade)
-		AND re.[type] IN ('fall','spring','all star game','cross-check')
+		AND re.[type] IN ('fall','cross-check')
 		AND (MONTH(re.created_at) IN (6,7,8,9,10,11,12,1) OR (MONTH(re.created_at) = 2 AND DAY(re.created_at) < 16))
 		AND draft_year >= 2005
 		AND draft_year <= @iSeason + 2
+		AND us.id <> 72
 	ORDER BY re.id
 		,ev.id
 		,sk.id
@@ -362,7 +365,7 @@ IF OBJECT_ID('tempdb..#temp_component_grades_merge') IS NOT NULL
 		,skill_code
 		,skill_type
 		,skill_name
-		,AVG([value]) AS [value]
+		,ROUND(AVG([value]),0) AS [value]
 	INTO #temp_component_grades_merge
 	FROM #temp_component_grades
 	GROUP BY report_id
@@ -574,6 +577,7 @@ IF OBJECT_ID('tempdb..#temp_report_grades_with_player') IS NOT NULL
 		,rg.scout_id
 		,rg.report_date
 		,rg.grade_distribution
+		,rg.report_type
 		,CASE WHEN poc.bane_player_id IS NULL THEN 0 
 			ELSE poc.pct_of_cap
 		END AS pct_of_cap
@@ -890,7 +894,83 @@ IF OBJECT_ID('tempdb..#temp_report_grades_add_eqg') IS NOT NULL
 	LEFT JOIN Analytics.dbo.stage_players_season_playtime_college pt2
 		ON rg.bane_player_id = pt2.bane_player_id
 		AND pt2.seasons_until_draft = 2	
+		
 
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 
+(10) (aaa)
+
+
+Find the unique cff games for each player
+
+OUTPUT TABLES:
+#temp_distinct_games_counts
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_all_games exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_all_games') IS NOT NULL
+	DROP TABLE #temp_all_games
+
+	SELECT DISTINCT o.pff_GSISPLAYERID AS gsis_player_id
+		,o.pff_GSISGAMEKEY AS gsis_game_key
+		,CAST(pff_GAMESEASON AS INT) AS season
+		,CASE WHEN pff_WEEK IN ('BG') THEN 100 
+				WHEN pff_WEEK IN ('CC') THEN 101
+				WHEN pff_WEEK IN ('FC') THEN 102
+				WHEN pff_WEEK IN ('PO') THEN 103
+				ELSE CAST([pff_WEEK] AS INT)
+		END AS [week]
+	INTO #temp_all_games
+	FROM Cff.dbo.PffPlays p
+	INNER JOIN Cff.dbo.PffOffense o
+		ON p.pff_PLAYID = o.pff_PLAYID
+	WHERE pff_WEEK NOT IN ('AS')
+
+
+	INSERT INTO #temp_all_games
+	SELECT DISTINCT o.pff_GSISPLAYERID AS gsis_player_id
+		,o.pff_GSISGAMEKEY AS gsis_game_key
+		,CAST(pff_GAMESEASON AS INT) AS season
+		,CASE WHEN pff_WEEK IN ('BG') THEN 100 
+				WHEN pff_WEEK IN ('CC') THEN 101
+				WHEN pff_WEEK IN ('FC') THEN 102
+				WHEN pff_WEEK IN ('PO') THEN 103
+				ELSE CAST([pff_WEEK] AS INT)
+		END AS [week]
+	FROM Cff.dbo.PffPlays p
+	INNER JOIN Cff.dbo.PffDefense o
+		ON p.pff_PLAYID = o.pff_PLAYID
+	WHERE pff_WEEK NOT IN ('AS')
+
+
+-- Check if #temp_distinct_games exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_distinct_games') IS NOT NULL
+	DROP TABLE #temp_distinct_games
+
+	SELECT DISTINCT gsis_player_id
+		,gsis_game_key
+		,season
+		,[week]
+	INTO #temp_distinct_games
+	FROM #temp_all_games
+
+
+-- Check if #temp_distinct_games_counts exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_distinct_games_counts') IS NOT NULL
+	DROP TABLE #temp_distinct_games_counts
+
+	SELECT pl.id AS bane_player_id
+		,draft_year - season - 1 AS seasons_until_draft
+		,COUNT(*) AS games_recorded
+	INTO #temp_distinct_games_counts
+	FROM #temp_distinct_games dg
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON dg.gsis_player_id = pl.ncaa_gsis_id
+		AND pl.is_deleted = 0
+	GROUP BY pl.id
+		,draft_year - season - 1
+		
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
  
@@ -971,6 +1051,9 @@ IF OBJECT_ID('tempdb..#temp_report_grades_add_cff_def_stats') IS NOT NULL
 	DROP TABLE #temp_report_grades_add_cff_def_stats
 
 	SELECT rg.*
+		,ga0.games_recorded AS games_recorded_0
+		,ga1.games_recorded AS games_recorded_1
+		,ga2.games_recorded AS games_recorded_2
 		,cv0.plays_pass AS plays_pass_def_0
 		,cv0.targets_defense AS targets_def_0
 		,cv0.completions_allowed AS completions_allowed_0
@@ -1047,7 +1130,16 @@ IF OBJECT_ID('tempdb..#temp_report_grades_add_cff_def_stats') IS NOT NULL
 		AND tk1.seasons_until_draft = 1
 	LEFT JOIN #temp_stats_tackling tk2
 		ON rg.bane_player_id = tk2.bane_player_id
-		AND tk2.seasons_until_draft = 2	
+		AND tk2.seasons_until_draft = 2
+	LEFT JOIN #temp_distinct_games_counts ga0
+		ON rg.bane_player_id = ga0.bane_player_id
+		AND ga0.seasons_until_draft = 0
+	LEFT JOIN #temp_distinct_games_counts ga1
+		ON rg.bane_player_id = ga1.bane_player_id
+		AND ga1.seasons_until_draft = 1
+	LEFT JOIN #temp_distinct_games_counts ga2
+		ON rg.bane_player_id = ga2.bane_player_id
+		AND ga2.seasons_until_draft = 2
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1077,8 +1169,9 @@ IF OBJECT_ID('tempdb..#temp_stats_receiving') IS NOT NULL
 		,co.receiving_tackle_avoided_sum AS receiving_tackles_avoided
 		,co.receiving_touchdown_sum AS receiving_tds
 		,co.drop_sum AS drops
+		,co.receiving_epa_sum AS receiving_epa
 	INTO #temp_stats_receiving
-	FROM Analytics.dbo.r_input_stats_receiving_college co
+	FROM Analytics.dbo.r_input_stats_receiving_college2 co
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON co.gsis_player_id = pl.ncaa_gsis_id
 		AND pl.is_deleted = 0
@@ -1171,6 +1264,7 @@ IF OBJECT_ID('tempdb..#temp_report_grades_add_cff_off_stats') IS NOT NULL
 		,re0.receiving_tackles_avoided AS receiving_tackles_avoided_0
 		,re0.receiving_tds AS receiving_tds_0
 		,re0.drops AS drops_0
+		,re0.receiving_epa AS receiving_epa_0
 		,re1.plays_route AS routes_run_1
 		,re1.target_offense AS targets_offense_1
 		,re1.catchable_target_offense AS catchable_targets_offense_1
@@ -1180,6 +1274,7 @@ IF OBJECT_ID('tempdb..#temp_report_grades_add_cff_off_stats') IS NOT NULL
 		,re1.receiving_tackles_avoided AS receiving_tackles_avoided_1
 		,re1.receiving_tds AS receiving_tds_1
 		,re1.drops AS drops_1
+		,re1.receiving_epa AS receiving_epa_1
 		,re2.plays_route AS routes_run_2
 		,re2.target_offense AS targets_offense_2
 		,re2.catchable_target_offense AS catchable_targets_offense_2
@@ -1189,6 +1284,7 @@ IF OBJECT_ID('tempdb..#temp_report_grades_add_cff_off_stats') IS NOT NULL
 		,re2.receiving_tackles_avoided AS receiving_tackles_avoided_2
 		,re2.receiving_tds AS receiving_tds_2
 		,re2.drops AS drops_2
+		,re2.receiving_epa AS receiving_epa_2
 		,ru0.plays_run AS plays_run_off_0
 		,ru0.rushes AS runs_0
 		,ru0.running_tds AS running_tds_0
@@ -1439,33 +1535,37 @@ IF OBJECT_ID('tempdb..#temp_ncaa_stats_pre_cff') IS NOT NULL
 
 	SELECT [bane_player_id]
 		,pl.draft_year - season - 1 AS seasons_until_draft
-		,SUM(ISNULL([d_tackles_assisted],0) + ISNULL([d_tackles_solo],0)) AS tackles_old
-		,SUM(ISNULL([d_tackles_for_loss_solo],0) + ISNULL([d_tackles_for_loss_assisted],0)) AS tackles_for_loss_old
-		,SUM([d_pass_breakups]) AS pbus_old
-		,SUM([d_forced_fumbles]) AS forced_fumbles_old
-		,SUM([d_interceptions]) AS interceptions_old
-		,SUM(ISNULL([d_sacks_solo],0) + ISNULL([d_sacks_assisted],0)) AS sacks_old
-		,SUM([d_qb_hurries]) AS pressures_old
-		,SUM([o_passing_attempts]) AS passing_attempts_old
-		,SUM([o_passing_completions]) AS passing_completions_old
-		,SUM([o_passing_interceptions]) AS passing_interceptions_old
-		,SUM([o_passing_yards]) AS passing_yards_old
-		,SUM([o_passing_touchdowns]) AS passing_tds_old
-		,SUM([o_rushes]) AS runs_old
-		,SUM([o_rushing_yards_net_yards]) AS running_yards_old 
-		,SUM([o_rushing_touchdowns]) AS running_tds_old
-		,SUM([o_receptions]) AS catches_old
-		,SUM([o_receiving_yards]) AS receiving_yards_old
-		,SUM([o_receiving_touchdowns]) AS receiving_tds_old
+		,CASE WHEN po.team = 'defense' THEN SUM(ISNULL([d_tackles_assisted],0) + ISNULL([d_tackles_solo],0)) ELSE NULL END AS tackles_old
+		,CASE WHEN po.team = 'defense' THEN SUM(ISNULL([d_tackles_for_loss_solo],0) + ISNULL([d_tackles_for_loss_assisted],0)) ELSE NULL END AS tackles_for_loss_old
+		,CASE WHEN po.team = 'defense' THEN SUM([d_pass_breakups]) ELSE NULL END AS pbus_old
+		,CASE WHEN po.team = 'defense' THEN SUM([d_forced_fumbles]) ELSE NULL END AS forced_fumbles_old
+		,CASE WHEN po.team = 'defense' THEN SUM([d_interceptions]) ELSE NULL END AS interceptions_old
+		,CASE WHEN po.team = 'defense' THEN SUM(ISNULL([d_sacks_solo],0) + ISNULL([d_sacks_assisted],0)) ELSE NULL END AS sacks_old
+		,CASE WHEN po.team = 'defense' THEN SUM([d_qb_hurries]) ELSE NULL END AS pressures_old
+		,CASE WHEN po.translation = 'QB' THEN SUM([o_passing_attempts]) ELSE NULL END AS passing_attempts_old
+		,CASE WHEN po.translation = 'QB' THEN SUM([o_passing_completions]) ELSE NULL END AS passing_completions_old
+		,CASE WHEN po.translation = 'QB' THEN SUM([o_passing_interceptions]) ELSE NULL END AS passing_interceptions_old
+		,CASE WHEN po.translation = 'QB' THEN SUM([o_passing_yards]) ELSE NULL END AS passing_yards_old
+		,CASE WHEN po.translation = 'QB' THEN SUM([o_passing_touchdowns]) ELSE NULL END AS passing_tds_old
+		,CASE WHEN po.team = 'offense' AND po.translation NOT IN ('OT','OG','OC') THEN SUM([o_rushes]) ELSE NULL END AS runs_old
+		,CASE WHEN po.team = 'offense' AND po.translation NOT IN ('OT','OG','OC') THEN SUM([o_rushing_yards_net_yards]) ELSE NULL END AS running_yards_old 
+		,CASE WHEN po.team = 'offense' AND po.translation NOT IN ('OT','OG','OC') THEN SUM([o_rushing_touchdowns]) ELSE NULL END AS running_tds_old
+		,CASE WHEN po.team = 'offense' AND po.translation NOT IN ('OT','OG','OC') THEN SUM([o_receptions]) ELSE NULL END AS catches_old
+		,CASE WHEN po.team = 'offense' AND po.translation NOT IN ('OT','OG','OC') THEN SUM([o_receiving_yards]) ELSE NULL END AS receiving_yards_old
+		,CASE WHEN po.team = 'offense' AND po.translation NOT IN ('OT','OG','OC') THEN SUM([o_receiving_touchdowns]) ELSE NULL END AS receiving_tds_old
 	INTO #temp_ncaa_stats_pre_cff
 	FROM [AnalyticsWork].[dbo].[ncaa_scrapes_matched] nc
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON nc.bane_player_id = pl.id
 		AND pl.is_deleted = 0
+	INNER JOIN BaneProductionAnalytics.dbo.positions po
+		ON pl.position_id = po.id
 	WHERE bane_player_id IS NOT NULL
 		AND season <= 2010
 	GROUP BY bane_player_id
 		,pl.draft_year - season - 1
+		,po.team
+		,po.translation
 
 
 
@@ -1502,7 +1602,10 @@ IF OBJECT_ID('tempdb..#temp_ncaa_defense') IS NOT NULL
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON de.player_id = pl.id
 		AND pl.is_deleted = 0
+	INNER JOIN BaneProductionAnalytics.dbo.positions po
+		ON pl.position_id = po.id
 	WHERE season >= 2011
+		AND po.team = 'defense'
 	GROUP BY pl.id
 		,pl.draft_year - season - 1
 
@@ -1523,7 +1626,10 @@ IF OBJECT_ID('tempdb..#temp_ncaa_passing') IS NOT NULL
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON de.player_id = pl.id
 		AND pl.is_deleted = 0
+	INNER JOIN BaneProductionAnalytics.dbo.positions po
+		ON pl.position_id = po.id
 	WHERE season >= 2011
+		AND po.translation = 'QB'
 	GROUP BY pl.id
 		,pl.draft_year - season - 1
 
@@ -1542,7 +1648,11 @@ IF OBJECT_ID('tempdb..#temp_ncaa_running') IS NOT NULL
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON de.player_id = pl.id
 		AND pl.is_deleted = 0
+	INNER JOIN BaneProductionAnalytics.dbo.positions po
+		ON pl.position_id = po.id
 	WHERE season >= 2011
+		AND po.team = 'offense'
+		AND po.translation NOT IN ('OT','OG','OC')
 	GROUP BY pl.id
 		,pl.draft_year - season - 1
 
@@ -1561,7 +1671,11 @@ IF OBJECT_ID('tempdb..#temp_ncaa_receiving') IS NOT NULL
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON de.player_id = pl.id
 		AND pl.is_deleted = 0
+	INNER JOIN BaneProductionAnalytics.dbo.positions po
+		ON pl.position_id = po.id
 	WHERE season >= 2011
+		AND po.team = 'offense'
+		AND po.translation NOT IN ('OT','OG','OC','QB')
 	GROUP BY pl.id
 		,pl.draft_year - season - 1
 
@@ -1585,24 +1699,24 @@ IF OBJECT_ID('tempdb..#temp_stats_ncaa') IS NOT NULL
 	SELECT ga.bane_player_id
 		,ga.season
 		,ga.seasons_until_draft
-		,ISNULL(cf.tackles_old,de.tackles_old) AS tackles_old
-		,ISNULL(cf.tackles_for_loss_old,de.tackles_for_loss_old) AS tackles_for_loss_old
-		,ISNULL(cf.pbus_old,de.pbus_old) AS pbus_old
-		,ISNULL(cf.forced_fumbles_old,de.forced_fumbles_old) AS forced_fumbles_old
-		,ISNULL(cf.interceptions_old,de.interceptions_old) AS interceptions_old
-		,ISNULL(cf.sacks_old,de.sacks_old) AS sacks_old
-		,ISNULL(cf.pressures_old,de.pressures_old) AS pressures_old
-		,ISNULL(cf.passing_attempts_old,pa.passing_attempts_old) AS passing_attempts_old
-		,ISNULL(cf.passing_completions_old,pa.passing_completions_old) AS passing_completions_old
-		,ISNULL(cf.passing_interceptions_old,pa.passing_interceptions_old) AS passing_interceptions_old
-		,ISNULL(cf.passing_yards_old,pa.passing_yards_old) AS passing_yards_old
-		,ISNULL(cf.passing_tds_old,pa.passing_tds_old) AS passing_tds_old
-		,ISNULL(cf.runs_old,ru.runs_old) AS runs_old
-		,ISNULL(cf.running_yards_old,ru.running_yards_old) AS running_yards_old
-		,ISNULL(cf.running_tds_old,ru.running_tds_old) AS running_tds_old
-		,ISNULL(cf.catches_old,re.catches_old) AS catches_old
-		,ISNULL(cf.receiving_yards_old,re.receiving_yards_old) AS receiving_yards_old
-		,ISNULL(cf.receiving_tds_old,re.receiving_tds_old) AS receiving_tds_old
+		,ISNULL(de.tackles_old,cf.tackles_old) AS tackles_old
+		,ISNULL(de.tackles_for_loss_old,cf.tackles_for_loss_old) AS tackles_for_loss_old
+		,ISNULL(de.pbus_old,cf.pbus_old) AS pbus_old
+		,ISNULL(de.forced_fumbles_old,cf.forced_fumbles_old) AS forced_fumbles_old
+		,ISNULL(de.interceptions_old,cf.interceptions_old) AS interceptions_old
+		,ISNULL(de.sacks_old,cf.sacks_old) AS sacks_old
+		,ISNULL(de.pressures_old,cf.pressures_old) AS pressures_old
+		,ISNULL(pa.passing_attempts_old,cf.passing_attempts_old) AS passing_attempts_old
+		,ISNULL(pa.passing_completions_old,cf.passing_completions_old) AS passing_completions_old
+		,ISNULL(pa.passing_interceptions_old,cf.passing_interceptions_old) AS passing_interceptions_old
+		,ISNULL(pa.passing_yards_old,cf.passing_yards_old) AS passing_yards_old
+		,ISNULL(pa.passing_tds_old,cf.passing_tds_old) AS passing_tds_old
+		,ISNULL(ru.runs_old,cf.runs_old) AS runs_old
+		,ISNULL(ru.running_yards_old,cf.running_yards_old) AS running_yards_old
+		,ISNULL(ru.running_tds_old,cf.running_tds_old) AS running_tds_old
+		,ISNULL(re.catches_old,cf.catches_old) AS catches_old
+		,ISNULL(re.receiving_yards_old,cf.receiving_yards_old) AS receiving_yards_old
+		,ISNULL(re.receiving_tds_old,cf.receiving_tds_old) AS receiving_tds_old
 	INTO #temp_stats_ncaa
 	FROM #temp_ncaa_games_playtime ga
 	LEFT JOIN #temp_ncaa_stats_pre_cff cf
@@ -1724,11 +1838,117 @@ IF OBJECT_ID('tempdb..#temp_report_grades_add_sentiment') IS NOT NULL
 
 SELECT *
 FROM #temp_report_grades_add_sentiment
-WHERE player = 'von miller'
+--WHERE player = 'trent richardson'
+ORDER by receiving_epa_0 desc
 
 */
 
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(13)
+
+
+Get down to one row of draft board position. Take a players draft
+board position from as late in the process as available. 
+
+OUTPUT TABLES:
+#temp_draft_boards_with_order
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+
+-- Check if #temp_draft_boards exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_boards') IS NOT NULL
+	DROP TABLE #temp_draft_boards
+
+	SELECT player_id AS bane_player_id
+		,db.id
+		,CASE WHEN position_translation IN ('RUSH','SAM') THEN 'OB'
+			WHEN position_translation IN ('FS','SS') THEN 'DS'
+			ELSE position_translation
+		END AS position
+		,gr.[value] AS grade_bucket
+		,position_rank
+		,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-DEC' THEN 4
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DEC' THEN 5
+			ELSE NULL
+		END AS order_by		
+	INTO #temp_draft_boards
+	FROM [BaneProductionAnalytics].[dbo].[draft_board_grades] db
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[grades] gr
+		ON db.grade_id = gr.id
+	WHERE position != ''
+		AND position IS NOT NULL
+		AND position_translation NOT IN ('RS','ST')
+		AND UPPER(LTRIM(RTRIM([type]))) IN ('PRE-DRAFT','POST-APR','POST-FEB','POST-DEC','PRE-DEC')
+
+
+-- Check if #temp_draft_boards_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_boards_with_order') IS NOT NULL
+	DROP TABLE #temp_draft_boards_with_order
+
+	SELECT bane_player_id
+		,position
+		,grade_bucket
+		,position_rank
+		,RANK() OVER (PARTITION BY bane_player_id ORDER BY order_by, position_rank, id) AS draft_board_position_order
+	INTO #temp_draft_boards_with_order
+	FROM #temp_draft_boards
+
+
+-- Check if #temp_draft_boards_latest exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_boards_latest') IS NOT NULL
+	DROP TABLE #temp_draft_boards_latest
+
+	SELECT *
+	INTO #temp_draft_boards_latest
+	FROM #temp_draft_boards_with_order
+	WHERE draft_board_position_order = 1
+
+
+
+-- Check if #temp_axon exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_axon') IS NOT NULL
+	DROP TABLE #temp_axon
+
+		select player_id
+			,max(accuracy) AS accuracy
+			,max(overall_score) AS overall_score
+		INTO #temp_axon
+		from BaneProductionAnalytics.dbo.axon_tests ax
+		group by player_id
+
+
+-- Check if #temp_report_grades_add_board exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_report_grades_add_board') IS NOT NULL
+	DROP TABLE #temp_report_grades_add_board
+
+	SELECT rg.*
+		,db.grade_bucket AS board_grade_final
+		,db.position_rank AS board_rank_final
+		,ax.accuracy AS axon_accuracy
+	    ,ax.overall_score AS axon_score
+	INTO #temp_report_grades_add_board
+	FROM #temp_report_grades_add_sentiment rg
+	LEFT JOIN #temp_draft_boards_latest db
+		ON rg.bane_player_id = db.bane_player_id
+	LEFT JOIN #temp_axon ax
+		ON rg.bane_player_id = ax.player_id
+
+
+
+
+
 	DELETE FROM Analytics.dbo.r_input_draft_model_pre_combine WHERE 1 = 1
 	INSERT INTO Analytics.dbo.r_input_draft_model_pre_combine
-	SELECT *	
-	FROM #temp_report_grades_add_sentiment
+	SELECT *
+	FROM #temp_report_grades_add_board
+
+	select *
+	from Analytics.dbo.r_input_draft_model_pre_combine
