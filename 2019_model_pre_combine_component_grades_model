@@ -17,6 +17,7 @@ And other scouts (Andrew) who tend to view the lower players to have lower avera
 
 v2 changes from doing z scores by skill id to skill type
 v3 adds in the step of taking the average for the merged grades like hands / ball awareness and shed / poa run
+v4 adds slot WR and CB
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -137,7 +138,6 @@ IF OBJECT_ID('tempdb..#temp_evaluations') IS NOT NULL
 		,CASE WHEN skill_id IN (1436,1524,1391) THEN 1436
 			WHEN skill_id IN (1455,1427) THEN 1455
 			WHEN skill_id IN (1525,1390) THEN 1525
-			WHEN skill_id IN (1448,1363) THEN 1448
 			WHEN skill_id IN (1370,1439,1389) THEN 1370
 			WHEN skill_id IN (1397,1401) THEN 1397
 			WHEN skill_id IN (1402,1526) THEN 1402
@@ -806,6 +806,48 @@ FROM #temp_evaluations_pivot_min
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Add bane_player_id to the season position tables
+
+OUTPUT TABLES:
+#temp_season_position_offense
+#temp_season_position_defense
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_season_position_offense exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_season_position_offense') IS NOT NULL
+	DROP TABLE #temp_season_position_offense
+
+	SELECT nfl_player_id
+		,pl.id AS bane_player_id
+		,season
+		,receiver_type
+	INTO #temp_season_position_offense
+	FROM Analytics.dbo.analysis_players_season_position_offense po
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON po.nfl_player_id = pl.nfl_id
+		AND pl.is_deleted = 0
+	WHERE season_type_adjusted = 'REGPOST'
+
+-- Check if #temp_season_position_defense exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_season_position_defense') IS NOT NULL
+	DROP TABLE #temp_season_position_defense
+
+	SELECT nfl_player_id
+		,pl.id AS bane_player_id
+		,season
+		,position_blt AS position_defense
+	INTO #temp_season_position_defense
+	FROM Analytics.dbo.analysis_players_season_position_defense pd
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON pd.nfl_player_id = pl.nfl_id
+		AND pl.is_deleted = 0
+	WHERE season_type_adjusted = 'REGPOST'
+		AND defense_type = 'ALL'
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 Join his pivoted college grades to the pivoted pro grades table.
 
 OUTPUT TABLES:
@@ -825,18 +867,19 @@ INSERT INTO Analytics.dbo.work_r_input_pre_combine_grades
 			WHEN pl.draft_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
 			ELSE NULL
 		END AS draft_year
-		,CASE WHEN pl.draft_year <= @current_season THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',pl.draft_year)) / 365.2425 
-			WHEN pl.draft_year IN (@current_season + 1,@current_season + 2) THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',@current_season + 1)) / 365.2425 
-			ELSE NULL
-		END AS age_at_draft
+		,NULL AS age_at_draft
 		,CASE WHEN COALESCE(pg.position,pn.translation) = 'OH' THEN 8
-			WHEN pg.position IS NULL AND pn.abbreviation = 'DE43' THEN 45
+			WHEN pg.position = 'DE' AND (pn.abbreviation = 'DE43' OR position_defense = 'DE43') THEN 45
+			WHEN COALESCE(pg.position,pn.translation) = 'DC' AND position_defense = 'NB' THEN 20
+			WHEN COALESCE(pg.position,pn.translation) = 'WR' AND receiver_type = 'SLOT' THEN 999
 			ELSE COALESCE(pg.position_id,pl.position_id)
 		END AS position_id 
 		,CASE WHEN COALESCE(pg.position,pn.translation) = 'OH' THEN 'RB'
-			WHEN pg.position IS NULL AND pn.abbreviation = 'DE43' THEN 'OB'
+			WHEN pg.position = 'DE' AND (pn.abbreviation = 'DE43' OR position_defense = 'DE43') THEN 'OB'
+			WHEN COALESCE(pg.position,pn.translation) = 'DC' AND position_defense = 'NB' THEN 'DC_SLOT'
+			WHEN COALESCE(pg.position,pn.translation) = 'WR' AND receiver_type = 'SLOT' THEN 'WR_SLOT'
 			ELSE COALESCE(pg.position,pn.translation)
-		END AS position 
+		END AS position
 		,grade_overall_max
 		,grade_overall_mean
 		,grade_overall_min
@@ -999,7 +1042,7 @@ INSERT INTO Analytics.dbo.work_r_input_pre_combine_grades
 		,CASE WHEN [X] > 0 THEN 1 ELSE 0 END AS flag_x
 		,CASE WHEN [Z] > 0 THEN 1 ELSE 0 END AS flag_y
 		,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(CAST(sal.salaries AS FLOAT),CAST(ins.salaries AS FLOAT),0) END AS pct_of_cap
-		,season
+		,pg.season
 		,CASE WHEN pl.draft_year > @current_season THEN 1 ELSE season_in_league END AS season_in_league
 		,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
 	FROM #temp_evaluations_pivot_mean ep_mean
@@ -1021,6 +1064,12 @@ INSERT INTO Analytics.dbo.work_r_input_pre_combine_grades
 		ON pl.nfl_id = ins.nfl_player_id
 	LEFT JOIN AnalyticsWork.dbo.scout_grade_flags sf
 		ON ep_mean.bane_player_id = sf.bane_player_id
+	LEFT JOIN #temp_season_position_offense poff
+		ON pg.bane_player_id = poff.bane_player_id
+		AND pg.season = poff.season
+	LEFT JOIN #temp_season_position_defense pdef
+		ON pg.bane_player_id = pdef.bane_player_id
+		AND pg.season = pdef.season
 	WHERE pl.draft_year <= @current_Season
 		OR (pl.draft_year IN (@current_Season + 1,@current_Season + 2) AND pg.season IS NULL)
 
