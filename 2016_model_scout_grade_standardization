@@ -1,0 +1,921 @@
+--Should the standardization be done by grade level as well as scout and position and trait?
+--	Inherently, players the the top of the board will have higher avg position specific grades
+--		So this could potentially lead to some scouts (Eric, Chad, Vince) who tend to view the higher players to have higher average grades
+--			And other scouts (Andrew) who tend to view the lower players to have lower average grades
+
+
+
+--********************  CORNERS  ********************
+
+-- Check if temp_scout_grade_standardization_cb, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_scout_grade_standardization_cb') IS NOT NULL
+		DROP TABLE ##temp_scout_grade_standardization_cb
+-- Check if temp_grades_with_z_scores_cb, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_grades_with_z_scores_cb') IS NOT NULL
+		DROP TABLE ##temp_grades_with_z_scores_cb
+
+--Find each scout's average and standard deviation for position specific grades
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+	      ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+	      ,AVG(CAST(position_specifics_close_on_ball_grade AS NUMERIC(9,7))) AS position_specifics_close_on_ball_grade_avg
+		  ,STDEVP(position_specifics_close_on_ball_grade) AS position_specifics_close_on_ball_grade_stdev
+	      ,AVG(CAST(position_specifics_hands_grade AS NUMERIC(9,7))) AS position_specifics_hands_grade_avg
+		  ,STDEVP(position_specifics_hands_grade) AS position_specifics_hands_grade_stdev
+	      ,AVG(CAST(position_specifics_key_and_diagnose_grade AS NUMERIC(9,7))) AS position_specifics_key_and_diagnose_grade_avg
+		  ,STDEVP(position_specifics_key_and_diagnose_grade) AS position_specifics_key_and_diagnose_grade_stdev
+	      ,AVG(CAST(position_specifics_man_to_man_coverage_grade AS NUMERIC(9,7))) AS position_specifics_man_to_man_coverage_grade_avg
+		  ,STDEVP(position_specifics_man_to_man_coverage_grade) AS position_specifics_man_to_man_coverage_grade_stdev
+	      ,AVG(CAST(position_specifics_range_grade AS NUMERIC(9,7))) AS position_specifics_range_grade_avg
+		  ,STDEVP(position_specifics_range_grade) AS position_specifics_range_grade_stdev
+	      ,AVG(CAST(position_specifics_run_support_tackling_grade AS NUMERIC(9,7))) AS position_specifics_run_support_tackling_grade_avg
+		  ,STDEVP(position_specifics_run_support_tackling_grade) AS position_specifics_run_support_tackling_grade_stdev
+	      ,AVG(CAST(position_specifics_zone_coverage_grade AS NUMERIC(9,7))) AS position_specifics_zone_coverage_grade_avg
+		  ,STDEVP(position_specifics_zone_coverage_grade) AS position_specifics_zone_coverage_grade_stdev
+	      ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	  INTO ##temp_scout_grade_standardization_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_corner_reports corners
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON corners.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Create z-scores
+    SELECT report_id
+		  ,id
+          ,player_id
+		  ,corners.scout_id
+	      ,(athletic_ability_grade-athletic_ability_grade_avg) / NULLIF(athletic_ability_grade_stdev,0) AS z_score_athletic_ability_grade 
+		  ,(character_grade-character_grade_avg) / NULLIF(character_grade_stdev,0) AS z_score_character_grade
+		  ,(competitiveness_grade-competitiveness_grade_avg) / NULLIF(competitiveness_grade_stdev,0) AS z_score_competitiveness_grade
+		  ,(durability_grade-durability_grade_avg) / NULLIF(durability_grade_stdev,0) AS z_score_durability_grade
+		  ,(explosion_grade-explosion_grade_avg) / NULLIF(explosion_grade_stdev,0) AS z_score_explosion_grade
+		  ,(instinct_grade-instinct_grade_avg) / NULLIF(instinct_grade_stdev,0) AS z_score_instinct_grade
+		  ,(playing_speed_grade-playing_speed_grade_avg) / NULLIF(playing_speed_grade_stdev,0) AS z_score_playing_speed_grade
+		  ,(size_grade-size_grade_avg) / NULLIF(size_grade_stdev,0) AS z_score_size_grade
+		  ,(speed_grade-speed_grade_avg) / NULLIF(speed_grade_stdev,0) AS z_score_speed_grade
+		  ,(toughness_grade-toughness_grade_avg) / NULLIF(toughness_grade_stdev,0) AS z_score_toughness_grade
+		  ,(position_specifics_close_on_ball_grade-position_specifics_close_on_ball_grade_avg) / NULLIF(position_specifics_close_on_ball_grade_stdev,0) AS z_score_position_specifics_close_on_ball_grade
+		  ,(position_specifics_hands_grade-position_specifics_hands_grade_avg) / NULLIF(position_specifics_hands_grade_stdev,0) AS z_score_position_specifics_hands_grade
+	      ,(position_specifics_key_and_diagnose_grade-position_specifics_key_and_diagnose_grade_avg) / NULLIF(position_specifics_key_and_diagnose_grade_stdev,0) AS z_score_position_specifics_key_and_diagnose_grade
+	      ,(position_specifics_man_to_man_coverage_grade-position_specifics_man_to_man_coverage_grade_avg) / NULLIF(position_specifics_man_to_man_coverage_grade_stdev,0) AS z_score_position_specifics_man_to_man_coverage_grade
+	      ,(position_specifics_range_grade-position_specifics_range_grade_avg) / NULLIF(position_specifics_range_grade_stdev,0) AS z_score_position_specifics_range_grade
+	      ,(position_specifics_run_support_tackling_grade-position_specifics_run_support_tackling_grade_avg) / NULLIF(position_specifics_run_support_tackling_grade_stdev,0) AS z_score_position_specifics_run_support_tackling_grade
+	      ,(position_specifics_zone_coverage_grade-position_specifics_zone_coverage_grade_avg) / NULLIF(position_specifics_zone_coverage_grade_stdev,0) AS z_score_position_specifics_zone_coverage_grade
+	      ,(position_specifics_special_teams_grade-position_specifics_special_teams_grade_avg) / NULLIF(position_specifics_special_teams_grade_stdev,0) AS z_score_position_specifics_special_teams_grade
+	  INTO ##temp_grades_with_z_scores_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_corner_reports corners
+INNER JOIN ##temp_scout_grade_standardization_cb zscore
+        ON corners.scout_id=zscore.scout_id
+  ORDER BY player_id
+
+ --Get the average standardized grades for each corner
+    SELECT player_id
+	      ,AVG(z_score_athletic_ability_grade) AS player_avg_z_score_athletic_ability_grade
+		  ,AVG(z_score_character_grade) AS player_avg_z_score_character_grade
+		  ,AVG(z_score_competitiveness_grade) AS player_avg_z_score_competitiveness_grade
+		  ,AVG(z_score_durability_grade) AS player_avg_z_score_durability_grade
+		  ,AVG(z_score_explosion_grade) AS player_avg_z_score_explosion_grade
+		  ,AVG(z_score_instinct_grade) AS player_avg_z_score_instinct_grade
+		  ,AVG(z_score_playing_speed_grade) AS player_avg_z_score_playing_speed_grade
+		  ,AVG(z_score_size_grade) AS player_avg_z_score_size_grade
+		  ,AVG(z_score_speed_grade) AS player_avg_z_score_speed_grade
+		  ,AVG(z_score_toughness_grade) AS player_avg_z_score_toughness_grade
+		  ,AVG(z_score_position_specifics_close_on_ball_grade) AS player_avg_z_score_position_specifics_close_on_ball_grade
+		  ,AVG(z_score_position_specifics_hands_grade) AS player_avg_z_score_position_specifics_hands_grade
+		  ,AVG(z_score_position_specifics_key_and_diagnose_grade) AS player_avg_z_score_position_specifics_key_and_diagnose_grade
+		  ,AVG(z_score_position_specifics_man_to_man_coverage_grade) AS player_avg_z_score_position_specifics_man_to_man_coverage_grade
+		  ,AVG(z_score_position_specifics_range_grade) AS player_avg_z_score_position_specifics_range_grade
+		  ,AVG(z_score_position_specifics_run_support_tackling_grade) AS player_avg_z_score_position_specifics_run_support_tackling_grade
+		  ,AVG(z_score_position_specifics_zone_coverage_grade) AS player_avg_z_score_position_specifics_zone_coverage_grade
+		  ,AVG(z_score_position_specifics_special_teams_grade) AS player_avg_z_score_position_specifics_special_teams_grade
+	  FROM ##temp_grades_with_z_scores_cb
+  GROUP BY player_id
+
+--********************  DEFENSIVE ENDS  ********************
+
+-- Check if temp_scout_grade_standardization_de, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_scout_grade_standardization_de') IS NOT NULL
+		DROP TABLE ##temp_scout_grade_standardization_de
+-- Check if temp_grades_with_z_scores_de, if it does drop it
+	IF OBJECT_ID('tempdb..##temp_grades_with_z_scores_de') IS NOT NULL
+		DROP TABLE ##temp_grades_with_z_scores_de
+
+--Find each scout's average and standard deviation for position specific grades
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+	      ,AVG(CAST(position_specifics_disengage_grade AS NUMERIC(9,7))) AS position_specifics_disengage_grade_avg
+		  ,STDEVP(position_specifics_disengage_grade) AS position_specifics_disengage_grade_stdev
+	      ,AVG(CAST(position_specifics_key_and_diagnose_grade AS NUMERIC(9,7))) AS position_specifics_key_and_diagnose_grade_avg
+		  ,STDEVP(position_specifics_key_and_diagnose_grade) AS position_specifics_key_and_diagnose_grade_stdev
+	      ,AVG(CAST(position_specifics_lateral_movement_grade AS NUMERIC(9,7))) AS position_specifics_lateral_movement_grade_avg
+		  ,STDEVP(position_specifics_lateral_movement_grade) AS position_specifics_lateral_movement_grade_stdev
+	      ,AVG(CAST(position_specifics_pass_rush_ability_grade AS NUMERIC(9,7))) AS position_specifics_pass_rush_ability_grade_avg
+		  ,STDEVP(position_specifics_pass_rush_ability_grade) AS position_specifics_pass_rush_ability_grade_stdev
+	      ,AVG(CAST(position_specifics_point_of_attack_grade AS NUMERIC(9,7))) AS position_specifics_point_of_attack_grade_avg
+		  ,STDEVP(position_specifics_point_of_attack_grade) AS position_specifics_point_of_attack_grade_stdev
+	      ,AVG(CAST(position_specifics_tackling_grade AS NUMERIC(9,7))) AS position_specifics_tackling_grade_avg
+		  ,STDEVP(position_specifics_tackling_grade) AS position_specifics_tackling_grade_stdev
+	      ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	  INTO ##temp_scout_grade_standardization_de
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_end_reports ends
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON ends.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Create z-scores
+    SELECT report_id
+		  ,id
+          ,player_id
+		  ,ends.scout_id
+	      ,(athletic_ability_grade-athletic_ability_grade_avg) / NULLIF(athletic_ability_grade_stdev,0) AS z_score_athletic_ability_grade 
+		  ,(character_grade-character_grade_avg) / NULLIF(character_grade_stdev,0) AS z_score_character_grade
+		  ,(competitiveness_grade-competitiveness_grade_avg) / NULLIF(competitiveness_grade_stdev,0) AS z_score_competitiveness_grade
+		  ,(durability_grade-durability_grade_avg) / NULLIF(durability_grade_stdev,0) AS z_score_durability_grade
+		  ,(explosion_grade-explosion_grade_avg) / NULLIF(explosion_grade_stdev,0) AS z_score_explosion_grade
+		  ,(instinct_grade-instinct_grade_avg) / NULLIF(instinct_grade_stdev,0) AS z_score_instinct_grade
+		  ,(playing_speed_grade-playing_speed_grade_avg) / NULLIF(playing_speed_grade_stdev,0) AS z_score_playing_speed_grade
+		  ,(size_grade-size_grade_avg) / NULLIF(size_grade_stdev,0) AS z_score_size_grade
+		  ,(speed_grade-speed_grade_avg) / NULLIF(speed_grade_stdev,0) AS z_score_speed_grade
+		  ,(toughness_grade-toughness_grade_avg) / NULLIF(toughness_grade_stdev,0) AS z_score_toughness_grade
+		  ,(position_specifics_disengage_grade-position_specifics_disengage_grade_avg) / NULLIF(position_specifics_disengage_grade_stdev,0) AS z_score_position_specifics_disengage_grade
+		  ,(position_specifics_key_and_diagnose_grade-position_specifics_key_and_diagnose_grade_avg) / NULLIF(position_specifics_key_and_diagnose_grade_stdev,0) AS z_score_position_specifics_key_and_diagnose_grade
+		  ,(position_specifics_lateral_movement_grade-position_specifics_lateral_movement_grade_avg) / NULLIF(position_specifics_lateral_movement_grade_stdev,0) AS z_score_position_specifics_lateral_movement_grade
+	      ,(position_specifics_pass_rush_ability_grade-position_specifics_pass_rush_ability_grade_avg) / NULLIF(position_specifics_pass_rush_ability_grade_stdev,0) AS z_score_position_specifics_pass_rush_ability_grade
+	      ,(position_specifics_point_of_attack_grade-position_specifics_point_of_attack_grade_avg) / NULLIF(position_specifics_point_of_attack_grade_stdev,0) AS z_score_position_specifics_point_of_attack_grade
+	      ,(position_specifics_tackling_grade-position_specifics_tackling_grade_avg) / NULLIF(position_specifics_tackling_grade_stdev,0) AS z_score_position_specifics_tackling_grade
+	      ,(position_specifics_special_teams_grade-position_specifics_special_teams_grade_avg) / NULLIF(position_specifics_special_teams_grade_stdev,0) AS z_score_position_specifics_special_teams_grade
+	  INTO ##temp_grades_with_z_scores_de
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_end_reports ends
+INNER JOIN ##temp_scout_grade_standardization_de zscore
+        ON ends.scout_id=zscore.scout_id
+  ORDER BY player_id
+
+ --Get the average grades for each corner
+    SELECT player_id
+	      ,AVG(z_score_athletic_ability_grade) AS player_avg_z_score_athletic_ability_grade
+		  ,AVG(z_score_character_grade) AS player_avg_z_score_character_grade
+		  ,AVG(z_score_competitiveness_grade) AS player_avg_z_score_competitiveness_grade
+		  ,AVG(z_score_durability_grade) AS player_avg_z_score_durability_grade
+		  ,AVG(z_score_explosion_grade) AS player_avg_z_score_explosion_grade
+		  ,AVG(z_score_instinct_grade) AS player_avg_z_score_instinct_grade
+		  ,AVG(z_score_playing_speed_grade) AS player_avg_z_score_playing_speed_grade
+		  ,AVG(z_score_size_grade) AS player_avg_z_score_size_grade
+		  ,AVG(z_score_speed_grade) AS player_avg_z_score_speed_grade
+		  ,AVG(z_score_toughness_grade) AS player_avg_z_score_toughness_grade
+		  ,AVG(z_score_position_specifics_disengage_grade) AS player_avg_z_score_position_specifics_disengage_grade
+		  ,AVG(z_score_position_specifics_key_and_diagnose_grade) AS player_avg_z_score_position_specifics_key_and_diagnose_grade
+		  ,AVG(z_score_position_specifics_lateral_movement_grade) AS player_avg_z_score_position_specifics_lateral_movement_grade
+		  ,AVG(z_score_position_specifics_pass_rush_ability_grade) AS player_avg_z_score_position_specifics_pass_rush_ability_grade
+		  ,AVG(z_score_position_specifics_point_of_attack_grade) AS player_avg_z_score_position_specifics_point_of_attack_grade
+		  ,AVG(z_score_position_specifics_tackling_grade) AS player_avg_z_score_position_specifics_tackling_grade
+		  ,AVG(z_score_position_specifics_special_teams_grade) AS player_avg_z_score_position_specifics_special_teams_grade
+	  FROM ##temp_grades_with_z_scores_de
+  GROUP BY player_id
+
+
+
+
+
+
+
+
+
+--Pass Rushers
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_disengage_grade AS NUMERIC(9,7))) AS position_specifics_disengage_grade_avg
+		  ,STDEVP(position_specifics_disengage_grade) AS position_specifics_disengage_grade_stdev
+		  ,AVG(CAST(position_specifics_key_and_diagnose_grade AS NUMERIC(9,7))) AS position_specifics_key_and_diagnose_grade_avg
+		  ,STDEVP(position_specifics_key_and_diagnose_grade) AS position_specifics_key_and_diagnose_grade_stdev
+		  ,AVG(CAST(position_specifics_lateral_movement_grade AS NUMERIC(9,7))) AS position_specifics_lateral_movement_grade_avg
+		  ,STDEVP(position_specifics_lateral_movement_grade) AS position_specifics_lateral_movement_grade_stdev
+		  ,AVG(CAST(position_specifics_pass_rush_ability_grade AS NUMERIC(9,7))) AS position_specifics_pass_rush_ability_grade_avg
+		  ,STDEVP(position_specifics_pass_rush_ability_grade) AS position_specifics_pass_rush_ability_grade_stdev
+		  ,AVG(CAST(position_specifics_point_of_attack_grade AS NUMERIC(9,7))) AS position_specifics_point_of_attack_grade_avg
+		  ,STDEVP(position_specifics_point_of_attack_grade) AS position_specifics_point_of_attack_grade_stdev
+		  ,AVG(CAST(position_specifics_tackling_grade AS NUMERIC(9,7))) AS position_specifics_tackling_grade_avg
+		  ,STDEVP(position_specifics_tackling_grade) AS position_specifics_tackling_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	  --INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_pass_rusher_reports rush
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON rush.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Safeties
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_close_on_ball_grade AS NUMERIC(9,7))) AS position_specifics_close_on_ball_grade_avg
+		  ,STDEVP(position_specifics_close_on_ball_grade) AS position_specifics_close_on_ball_grade_stdev
+		  ,AVG(CAST(position_specifics_hands_grade AS NUMERIC(9,7))) AS position_specifics_hands_grade_avg
+		  ,STDEVP(position_specifics_hands_grade) AS position_specifics_hands_grade_stdev
+		  ,AVG(CAST(position_specifics_key_and_diagnose_grade AS NUMERIC(9,7))) AS position_specifics_key_and_diagnose_grade_avg
+		  ,STDEVP(position_specifics_key_and_diagnose_grade) AS position_specifics_key_and_diagnose_grade_stdev
+		  ,AVG(CAST(position_specifics_man_to_man_coverage_grade AS NUMERIC(9,7))) AS position_specifics_man_to_man_coverage_grade_avg
+		  ,STDEVP(position_specifics_man_to_man_coverage_grade) AS position_specifics_man_to_man_coverage_grade_stdev
+		  ,AVG(CAST(position_specifics_range_grade AS NUMERIC(9,7))) AS position_specifics_range_grade_grade_avg
+		  ,STDEVP(position_specifics_range_grade) AS position_specifics_range_grade_stdev
+		  ,AVG(CAST(position_specifics_run_support_tackling_grade AS NUMERIC(9,7))) AS position_specifics_run_support_tackling_grade_avg
+		  ,STDEVP(position_specifics_run_support_tackling_grade) AS position_specifics_run_support_tackling_grade_stdev
+		  ,AVG(CAST(position_specifics_zone_coverage_grade AS NUMERIC(9,7))) AS position_specifics_zone_coverage_grade_avg
+		  ,STDEVP(position_specifics_zone_coverage_grade) AS position_specifics_zone_coverage_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_safety_reports safety
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON safety.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Defensive Tackles
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_disengage_grade AS NUMERIC(9,7))) AS position_specifics_disengage_grade_avg
+		  ,STDEVP(position_specifics_disengage_grade) AS position_specifics_disengage_grade_stdev
+		  ,AVG(CAST(position_specifics_key_and_diagnose_grade AS NUMERIC(9,7))) AS position_specifics_key_and_diagnose_grade_avg
+		  ,STDEVP(position_specifics_key_and_diagnose_grade) AS position_specifics_key_and_diagnose_grade_stdev
+		  ,AVG(CAST(position_specifics_lateral_movement_grade AS NUMERIC(9,7))) AS position_specifics_lateral_movement_grade_avg
+		  ,STDEVP(position_specifics_lateral_movement_grade) AS position_specifics_lateral_movement_grade_stdev
+		  ,AVG(CAST(position_specifics_pass_rush_ability_grade AS NUMERIC(9,7))) AS position_specifics_pass_rush_ability_grade_avg
+		  ,STDEVP(position_specifics_pass_rush_ability_grade) AS position_specifics_pass_rush_ability_grade_stdev
+		  ,AVG(CAST(position_specifics_point_of_attack_grade AS NUMERIC(9,7))) AS position_specifics_point_of_attack_grade_avg
+		  ,STDEVP(position_specifics_point_of_attack_grade) AS position_specifics_point_of_attack_grade_stdev
+		  ,AVG(CAST(position_specifics_tackling_grade AS NUMERIC(9,7))) AS position_specifics_tackling_grade_avg
+		  ,STDEVP(position_specifics_tackling_grade) AS position_specifics_tackling_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_defensive_tackle_reports dtackles
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON dtackles.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Fullbacks
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_blitz_protect_grade AS NUMERIC(9,7))) AS position_specifics_blitz_protect_grade_avg
+		  ,STDEVP(position_specifics_blitz_protect_grade) AS position_specifics_blitz_protect_grade_stdev
+		  ,AVG(CAST(position_specifics_elusiveness_grade AS NUMERIC(9,7))) AS position_specifics_elusiveness_grade_avg
+		  ,STDEVP(position_specifics_elusiveness_grade) AS position_specifics_elusiveness_grade_stdev
+		  ,AVG(CAST(position_specifics_inside_run_grade AS NUMERIC(9,7))) AS position_specifics_inside_run_grade_avg
+		  ,STDEVP(position_specifics_inside_run_grade) AS position_specifics_inside_run_grade_stdev
+		  ,AVG(CAST(position_specifics_instincts_grade AS NUMERIC(9,7))) AS position_specifics_instincts_grade_avg
+		  ,STDEVP(position_specifics_instincts_grade) AS position_specifics_instincts_grade_stdev
+		  ,AVG(CAST(position_specifics_outside_run_grade AS NUMERIC(9,7))) AS position_specifics_outside_run_grade_avg
+		  ,STDEVP(position_specifics_outside_run_grade) AS position_specifics_outside_run_grade_stdev
+		  ,AVG(CAST(position_specifics_protect_ball_grade AS NUMERIC(9,7))) AS position_specifics_protect_ball_grade_avg
+		  ,STDEVP(position_specifics_protect_ball_grade) AS position_specifics_protect_ball_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_fullback_reports fback
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON fback.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Inside Backers
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_blitz_grade AS NUMERIC(9,7))) AS position_specifics_blitz_grade_avg
+		  ,STDEVP(position_specifics_blitz_grade) AS position_specifics_blitz_grade_stdev
+		  ,AVG(CAST(position_specifics_hand_use_grade AS NUMERIC(9,7))) AS position_specifics_hand_use_grade_avg
+		  ,STDEVP(position_specifics_hand_use_grade) AS position_specifics_hand_use_grade_stdev
+		  ,AVG(CAST(position_specifics_key_and_diagnose_grade AS NUMERIC(9,7))) AS position_specifics_key_and_diagnose_grade_avg
+		  ,STDEVP(position_specifics_key_and_diagnose_grade) AS position_specifics_key_and_diagnose_grade_stdev
+		  ,AVG(CAST(position_specifics_point_of_attack_grade AS NUMERIC(9,7))) AS position_specifics_point_of_attack_grade_avg
+		  ,STDEVP(position_specifics_point_of_attack_grade) AS position_specifics_point_of_attack_grade_stdev
+		  ,AVG(CAST(position_specifics_pursuit_grade AS NUMERIC(9,7))) AS position_specifics_pursuit_grade_avg
+		  ,STDEVP(position_specifics_pursuit_grade) AS position_specifics_pursuit_grade_stdev
+		  ,AVG(CAST(position_specifics_range_grade AS NUMERIC(9,7))) AS position_specifics_range_grade_avg
+		  ,STDEVP(position_specifics_range_grade) AS position_specifics_range_grade_stdev
+		  ,AVG(CAST(position_specifics_tackling_grade AS NUMERIC(9,7))) AS position_specifics_tackling_grade_avg
+		  ,STDEVP(position_specifics_tackling_grade) AS position_specifics_tackling_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_inside_backer_reports inside
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON inside.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Long Snappers
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_key_and_diagnose_grade AS NUMERIC(9,7))) AS position_specifics_accuracy_grade_avg
+		  ,STDEVP(position_specifics_key_and_diagnose_grade) AS position_specifics_accuracy_grade_stdev
+		  ,AVG(CAST(position_specifics_man_to_man_cover_grade AS NUMERIC(9,7))) AS position_specifics_velocity_grade_avg
+		  ,STDEVP(position_specifics_man_to_man_cover_grade) AS position_specifics_velocity_grade_stdev
+		  ,AVG(CAST(position_specifics_zone_cover_grade AS NUMERIC(9,7))) AS position_specifics_coverage_grade_avg
+		  ,STDEVP(position_specifics_zone_cover_grade) AS position_specifics_coverage_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_long_snapper_reports long
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON long.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Centers
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_hand_quickness_grade AS NUMERIC(9,7))) AS position_specifics_hand_quickness_grade_avg
+		  ,STDEVP(position_specifics_hand_quickness_grade) AS position_specifics_hand_quickness_grade_stdev
+		  ,AVG(CAST(position_specifics_pass_block_grade AS NUMERIC(9,7))) AS position_specifics_pass_block_grade_avg
+		  ,STDEVP(position_specifics_pass_block_grade) AS position_specifics_pass_block_grade_stdev
+		  ,AVG(CAST(position_specifics_pickup_grade AS NUMERIC(9,7))) AS position_specifics_pickup_grade_avg
+		  ,STDEVP(position_specifics_pickup_grade) AS position_specifics_pickup_grade_stdev
+		  ,AVG(CAST(position_specifics_pulling_grade AS NUMERIC(9,7))) AS position_specifics_pulling_grade_avg
+		  ,STDEVP(position_specifics_pulling_grade) AS position_specifics_pulling_grade_stdev
+		  ,AVG(CAST(position_specifics_run_block_grade AS NUMERIC(9,7))) AS position_specifics_run_block_grade_avg
+		  ,STDEVP(position_specifics_run_block_grade) AS position_specifics_run_block_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_offensive_center_reports center
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON center.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Guards
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_hand_quickness_grade AS NUMERIC(9,7))) AS position_specifics_hand_quickness_grade_avg
+		  ,STDEVP(position_specifics_hand_quickness_grade) AS position_specifics_hand_quickness_grade_stdev
+		  ,AVG(CAST(position_specifics_pass_block_grade AS NUMERIC(9,7))) AS position_specifics_pass_block_grade_avg
+		  ,STDEVP(position_specifics_pass_block_grade) AS position_specifics_pass_block_grade_stdev
+		  ,AVG(CAST(position_specifics_pickup_grade AS NUMERIC(9,7))) AS position_specifics_pickup_grade_avg
+		  ,STDEVP(position_specifics_pickup_grade) AS position_specifics_pickup_grade_stdev
+		  ,AVG(CAST(position_specifics_pulling_grade AS NUMERIC(9,7))) AS position_specifics_pulling_grade_avg
+		  ,STDEVP(position_specifics_pulling_grade) AS position_specifics_pulling_grade_stdev
+		  ,AVG(CAST(position_specifics_run_block_grade AS NUMERIC(9,7))) AS position_specifics_run_block_grade_avg
+		  ,STDEVP(position_specifics_run_block_grade) AS position_specifics_run_block_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_offensive_guard_reports guard
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON guard.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Tackles
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_hand_quickness_grade AS NUMERIC(9,7))) AS position_specifics_hand_quickness_grade_avg
+		  ,STDEVP(position_specifics_hand_quickness_grade) AS position_specifics_hand_quickness_grade_stdev
+		  ,AVG(CAST(position_specifics_pass_block_grade AS NUMERIC(9,7))) AS position_specifics_pass_block_grade_avg
+		  ,STDEVP(position_specifics_pass_block_grade) AS position_specifics_pass_block_grade_stdev
+		  ,AVG(CAST(position_specifics_pickup_grade AS NUMERIC(9,7))) AS position_specifics_pickup_grade_avg
+		  ,STDEVP(position_specifics_pickup_grade) AS position_specifics_pickup_grade_stdev
+		  ,AVG(CAST(position_specifics_pulling_grade AS NUMERIC(9,7))) AS position_specifics_pulling_grade_avg
+		  ,STDEVP(position_specifics_pulling_grade) AS position_specifics_pulling_grade_stdev
+		  ,AVG(CAST(position_specifics_run_block_grade AS NUMERIC(9,7))) AS position_specifics_run_block_grade_avg
+		  ,STDEVP(position_specifics_run_block_grade) AS position_specifics_run_block_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_offensive_tackle_reports tackle
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON tackle.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Outside Linebackers
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_blitz_grade AS NUMERIC(9,7))) AS position_specifics_blitz_grade_avg
+		  ,STDEVP(position_specifics_blitz_grade) AS position_specifics_blitz_grade_stdev
+		  ,AVG(CAST(position_specifics_hand_use_grade AS NUMERIC(9,7))) AS position_specifics_hand_use_grade_avg
+		  ,STDEVP(position_specifics_hand_use_grade) AS position_specifics_hand_use_grade_stdev
+		  ,AVG(CAST(position_specifics_key_and_diagnose_grade AS NUMERIC(9,7))) AS position_specifics_key_and_diagnose_grade_avg
+		  ,STDEVP(position_specifics_key_and_diagnose_grade) AS position_specifics_key_and_diagnose_grade_stdev
+		  ,AVG(CAST(position_specifics_point_of_attack_grade AS NUMERIC(9,7))) AS position_specifics_point_of_attack_grade_avg
+		  ,STDEVP(position_specifics_point_of_attack_grade) AS position_specifics_point_of_attack_grade_stdev
+		  ,AVG(CAST(position_specifics_pursuit_grade AS NUMERIC(9,7))) AS position_specifics_pursuit_grade_avg
+		  ,STDEVP(position_specifics_pursuit_grade) AS position_specifics_pursuit_grade_stdev
+		  ,AVG(CAST(position_specifics_range_grade AS NUMERIC(9,7))) AS position_specifics_range_grade_avg
+		  ,STDEVP(position_specifics_range_grade) AS position_specifics_range_grade_stdev
+		  ,AVG(CAST(position_specifics_tackling_grade AS NUMERIC(9,7))) AS position_specifics_tackling_grade_avg
+		  ,STDEVP(position_specifics_tackling_grade) AS position_specifics_tackling_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_outside_backer_reports outside
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON outside.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Place Kickers
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_accuracy_grade AS NUMERIC(9,7))) AS position_specifics_accuracy_grade_avg
+		  ,STDEVP(position_specifics_accuracy_grade) AS position_specifics_accuracy_grade_stdev
+		  ,AVG(CAST(position_specifics_foot_speed_grade AS NUMERIC(9,7))) AS position_specifics_foot_speed_grade_avg
+		  ,STDEVP(position_specifics_foot_speed_grade) AS position_specifics_foot_speed_grade_stdev
+		  ,AVG(CAST(position_specifics_plant_relation_grade AS NUMERIC(9,7))) AS position_specifics_plant_relation_grade_avg
+		  ,STDEVP(position_specifics_plant_relation_grade) AS position_specifics_plant_relation_grade_stdev
+		  ,AVG(CAST(position_specifics_pressure_kick_stability_grade AS NUMERIC(9,7))) AS position_specifics_pressure_kick_stability_grade_avg
+		  ,STDEVP(position_specifics_pressure_kick_stability_grade) AS position_specifics_pressure_kick_stability_grade_stdev
+		  ,AVG(CAST(position_specifics_rise_grade AS NUMERIC(9,7))) AS position_specifics_rise_grade_avg
+		  ,STDEVP(position_specifics_rise_grade) AS position_specifics_rise_grade_stdev
+		  ,AVG(CAST(position_specifics_stepping_pattern_grade AS NUMERIC(9,7))) AS position_specifics_stepping_pattern_grade_avg
+		  ,STDEVP(position_specifics_stepping_pattern_grade) AS position_specifics_stepping_pattern_grade_stdev
+		  ,AVG(CAST(position_specifics_style_grade AS NUMERIC(9,7))) AS position_specifics_style_grade_avg
+		  ,STDEVP(position_specifics_style_grade) AS position_specifics_style_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_place_kicker_reports kicker
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON kicker.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Punters
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_approach_line_grade AS NUMERIC(9,7))) AS position_specifics_approach_line_grade_avg
+		  ,STDEVP(position_specifics_approach_line_grade) AS position_specifics_approach_line_grade_stdev
+		  ,AVG(CAST(position_specifics_foot_speed_grade AS NUMERIC(9,7))) AS position_specifics_foot_speed_grade_avg
+		  ,STDEVP(position_specifics_foot_speed_grade) AS position_specifics_foot_speed_grade_stdev
+		  ,AVG(CAST(position_specifics_handling_time_grade AS NUMERIC(9,7))) AS position_specifics_handling_time_grade_avg
+		  ,STDEVP(position_specifics_handling_time_grade) AS position_specifics_handling_time_grade_stdev
+		  ,AVG(CAST(position_specifics_hands_grade AS NUMERIC(9,7))) AS position_specifics_hands_grade_avg
+		  ,STDEVP(position_specifics_hands_grade) AS position_specifics_hands_grade_stdev
+		  ,AVG(CAST(position_specifics_mental_stability_grade AS NUMERIC(9,7))) AS position_specifics_mental_stability_grade_avg
+		  ,STDEVP(position_specifics_mental_stability_grade) AS position_specifics_mental_stability_grade_stdev
+		  ,AVG(CAST(position_specifics_production_grade AS NUMERIC(9,7))) AS position_specifics_production_grade_avg
+		  ,STDEVP(position_specifics_production_grade) AS position_specifics_production_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_punter_reports punter
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON punter.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+
+--Quarterback
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(summary_character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(summary_character_grade) AS character_grade_stdev
+	      ,AVG(CAST(summary_durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(summary_durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(summary_instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(summary_instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(summary_speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(summary_speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(summary_toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(summary_toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(critical_factors_accuracy_grade AS NUMERIC(9,7))) AS critical_factors_accuracy_grade_avg
+		  ,STDEVP(critical_factors_accuracy_grade) AS critical_factors_accuracy_grade_stdev
+		  ,AVG(CAST(critical_factors_arm_strength_grade AS NUMERIC(9,7))) AS critical_factors_arm_strength_grade_avg
+		  ,STDEVP(critical_factors_arm_strength_grade) AS critical_factors_arm_strength_grade_stdev
+		  ,AVG(CAST(critical_factors_competitiveness_grade AS NUMERIC(9,7))) AS critical_factors_competitiveness_grade_avg
+		  ,STDEVP(critical_factors_competitiveness_grade) AS critical_factors_competitiveness_grade_stdev
+		  ,AVG(CAST(critical_factors_mental_awareness_grade AS NUMERIC(9,7))) AS critical_factors_mental_awareness_grade_avg
+		  ,STDEVP(critical_factors_mental_awareness_grade) AS critical_factors_mental_awareness_grade_stdev
+		  ,AVG(CAST(critical_factors_mobility_grade AS NUMERIC(9,7))) AS critical_factors_mobility_grade_avg
+		  ,STDEVP(critical_factors_mobility_grade) AS critical_factors_mobility_grade_stdev
+		  ,AVG(CAST(critical_factors_production_grade AS NUMERIC(9,7))) AS critical_factors_production_grade_avg
+		  ,STDEVP(critical_factors_production_grade) AS critical_factors_production_grade_stdev
+		  ,AVG(CAST(position_specifics_clean_chart_grade AS NUMERIC(9,7))) AS position_specifics_clean_chart_grade_avg
+		  ,STDEVP(position_specifics_clean_chart_grade) AS position_specifics_clean_chart_grade_stdev
+		  ,AVG(CAST(position_specifics_decision_making_grade AS NUMERIC(9,7))) AS position_specifics_decision_making_grade_avg
+		  ,STDEVP(position_specifics_decision_making_grade) AS position_specifics_decision_making_grade_stdev
+		  ,AVG(CAST(position_specifics_pocket_awareness_grade AS NUMERIC(9,7))) AS position_specifics_pocket_awareness_grade_avg
+		  ,STDEVP(position_specifics_pocket_awareness_grade) AS position_specifics_pocket_awareness_grade_stdev
+		  ,AVG(CAST(position_specifics_release_grade AS NUMERIC(9,7))) AS position_specifics_release_grade_avg
+		  ,STDEVP(position_specifics_release_grade) AS position_specifics_release_grade_stdev
+		  ,AVG(CAST(position_specifics_setup_grade AS NUMERIC(9,7))) AS position_specifics_setup_grade_avg
+		  ,STDEVP(position_specifics_setup_grade) AS position_specifics_setup_grade_stdev
+		  ,AVG(CAST(position_specifics_strength_grade AS NUMERIC(9,7))) AS position_specifics_strength_grade_avg
+		  ,STDEVP(position_specifics_strength_grade) AS position_specifics_strength_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_quarterback_reports qback
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON qback.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Running Back
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_specifics_blitz_protect_grade AS NUMERIC(9,7))) AS position_specifics_blitz_protect_grade_avg
+		  ,STDEVP(position_specifics_blitz_protect_grade) AS position_specifics_blitz_protect_grade_stdev
+		  ,AVG(CAST(position_specifics_hands_grade AS NUMERIC(9,7))) AS position_specifics_hands_grade_avg
+		  ,STDEVP(position_specifics_hands_grade) AS position_specifics_hands_grade_stdev
+		  ,AVG(CAST(position_specifics_inside_run_grade AS NUMERIC(9,7))) AS position_specifics_inside_run_grade_avg
+		  ,STDEVP(position_specifics_inside_run_grade) AS position_specifics_inside_run_grade_stdev
+		  ,AVG(CAST(position_specifics_instincts_grade AS NUMERIC(9,7))) AS position_specifics_instincts_grade_avg
+		  ,STDEVP(position_specifics_instincts_grade) AS position_specifics_instincts_grade_stdev
+		  ,AVG(CAST(position_specifics_outside_run_grade AS NUMERIC(9,7))) AS position_specifics_outside_run_grade_avg
+		  ,STDEVP(position_specifics_outside_run_grade) AS position_specifics_outside_run_grade_stdev
+		  ,AVG(CAST(position_specifics_protect_ball_grade AS NUMERIC(9,7))) AS position_specifics_protect_ball_grade_avg
+		  ,STDEVP(position_specifics_protect_ball_grade) AS position_specifics_protect_ball_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_running_back_reports rback
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON rback.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Tight End
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_body_adjustment_grade AS NUMERIC(9,7))) AS position_body_adjustment_grade_avg
+		  ,STDEVP(position_body_adjustment_grade) AS position_body_adjustment_grade_stdev
+		  ,AVG(CAST(position_specifics_hands_grade AS NUMERIC(9,7))) AS position_specifics_hands_grade_avg
+		  ,STDEVP(position_specifics_hands_grade) AS position_specifics_hands_grade_stdev
+		  ,AVG(CAST(position_specifics_release_grade AS NUMERIC(9,7))) AS position_specifics_release_grade_avg
+		  ,STDEVP(position_specifics_release_grade) AS position_specifics_release_grade_stdev
+		  ,AVG(CAST(position_specifics_routes_rating AS NUMERIC(9,7))) AS position_specifics_routes_grade_avg
+		  ,STDEVP(position_specifics_routes_rating) AS position_specifics_routes_grade_stdev
+		  ,AVG(CAST(position_specifics_run_after_catch_grade AS NUMERIC(9,7))) AS position_specifics_run_after_catch_grade_avg
+		  ,STDEVP(position_specifics_run_after_catch_grade) AS position_specifics_run_after_catch_grade_stdev
+		  ,AVG(CAST(position_specifics_run_block_grade AS NUMERIC(9,7))) AS position_specifics_run_block_grade_avg
+		  ,STDEVP(position_specifics_run_block_grade) AS position_specifics_run_block_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_tight_end_reports tight
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON tight.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
+
+--Wide Receiver
+    SELECT scout_id
+          ,first_name
+		  ,last_name
+	      ,AVG(CAST(athletic_ability_grade AS NUMERIC(9,7))) AS athletic_ability_grade_avg 
+		  ,STDEVP(athletic_ability_grade) AS athletic_ability_grade_stdev
+	      ,AVG(CAST(character_grade AS NUMERIC(9,7))) AS character_grade_avg
+		  ,STDEVP(character_grade) AS character_grade_stdev
+	      ,AVG(CAST(competitiveness_grade AS NUMERIC(9,7))) AS competitiveness_grade_avg
+		  ,STDEVP(competitiveness_grade) AS competitiveness_grade_stdev
+	      ,AVG(CAST(durability_grade AS NUMERIC(9,7))) AS durability_grade_avg
+		  ,STDEVP(durability_grade) AS durability_grade_stdev
+	      ,AVG(CAST(explosion_grade AS NUMERIC(9,7))) AS explosion_grade_avg
+		  ,STDEVP(explosion_grade) AS explosion_grade_stdev
+	      ,AVG(CAST(instinct_grade AS NUMERIC(9,7))) AS instinct_grade_avg
+		  ,STDEVP(instinct_grade) AS instinct_grade_stdev
+	      ,AVG(CAST(playing_speed_grade AS NUMERIC(9,7))) AS playing_speed_grade_avg
+		  ,STDEVP(playing_speed_grade) AS playing_speed_grade_stdev
+	      ,AVG(CAST(size_grade AS NUMERIC(9,7))) AS size_grade_avg
+		  ,STDEVP(size_grade) AS size_grade_stdev
+	      ,AVG(CAST(speed_grade AS NUMERIC(9,7))) AS speed_grade_avg
+		  ,STDEVP(speed_grade) AS speed_grade_stdev
+		  ,AVG(CAST(toughness_grade AS NUMERIC(9,7))) AS toughness_grade_avg
+		  ,STDEVP(toughness_grade) AS toughness_grade_stdev
+		  ,AVG(CAST(position_body_adjustment_grade AS NUMERIC(9,7))) AS position_body_adjustment_grade_avg
+		  ,STDEVP(position_body_adjustment_grade) AS position_body_adjustment_grade_stdev
+		  ,AVG(CAST(position_specifics_blitz_protection_grade AS NUMERIC(9,7))) AS position_specifics_blitz_protection_grade_avg
+		  ,STDEVP(position_specifics_blitz_protection_grade) AS position_specifics_blitz_protection_grade_stdev
+		  ,AVG(CAST(position_specifics_play_making_grade AS NUMERIC(9,7))) AS position_specifics_play_making_grade_avg
+		  ,STDEVP(position_specifics_play_making_grade) AS position_specifics_play_making_grade_stdev
+		  ,AVG(CAST(position_specifics_release_grade AS NUMERIC(9,7))) AS position_specifics_release_grade_avg
+		  ,STDEVP(position_specifics_release_grade) AS position_specifics_release_grade_stdev
+		  ,AVG(CAST(position_specifics_routes_rating AS NUMERIC(9,7))) AS position_specifics_routes_grade_avg
+		  ,STDEVP(position_specifics_routes_rating) AS position_specifics_routes_grade_stdev
+		  ,AVG(CAST(position_specifics_run_after_catch_grade AS NUMERIC(9,7))) AS position_specifics_run_after_catch_grade_avg
+		  ,STDEVP(position_specifics_run_after_catch_grade) AS position_specifics_run_after_catch_grade_stdev
+		  ,AVG(CAST(position_specifics_special_teams_grade AS NUMERIC(9,7))) AS position_specifics_special_teams_grade_avg
+		  ,STDEVP(position_specifics_special_teams_grade) AS position_specifics_special_teams_grade_stdev
+	--INTO ##temp_grades_cb
+      FROM RavensIncoming.dbo.stratbridge_ncaa_wideout_reports wide
+INNER JOIN RavensIncoming.dbo.stratbridge_scouts scouts
+        ON wide.scout_id=scouts.id
+     WHERE report_type in (1,3,4)
+  GROUP BY scout_id, first_name, last_name
