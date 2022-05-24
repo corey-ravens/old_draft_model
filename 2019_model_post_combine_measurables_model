@@ -155,9 +155,9 @@ IF OBJECT_ID('tempdb..#temp_draft_board_positions') IS NOT NULL
 	END AS order_by
 	INTO #temp_draft_board_positions
 	FROM [BaneProductionAnalytics].[dbo].[draft_board_grades]
-	WHERE position != '' 
+	WHERE [type] = 'pre-draft'
+		AND position != ''
 		AND position IS NOT NULL
-		AND player_id <> 64668
 		AND position_translation NOT IN ('RS','ST')
 
 
@@ -425,6 +425,110 @@ IF OBJECT_ID('tempdb..#temp_measurables') IS NOT NULL
 	WHERE imported_with_errors = 0
 
 
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(5 1/2)
+
+Throw out the verified times where a scout is just re-entering an Indy measurable.
+
+OUTPUT TABLES:
+#temp_verifieds_to_delete
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_verifieds exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_verifieds') IS NOT NULL
+	DROP TABLE #temp_verifieds
+
+	SELECT wo.id AS workout_id
+		,wo.[description] AS workout_description
+		,wo.player_id AS bane_player_id
+		,re.code AS workout_code
+		,re.[priority]
+		,wt.[type]
+		,wo.[date] AS workout_date
+		,me.measurable_type_id
+		,mt.code
+		,me.order_by AS attempt
+		,me.[value]
+	INTO #temp_verifieds
+	FROM [BaneProductionAnalytics].[dbo].[workouts] wo
+	LEFT JOIN #temp_measurables me
+		ON wo.id = me.workout_id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[measurable_types] mt
+		ON me.measurable_type_id = mt.id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[player_workout_types] wt
+		ON wo.player_workout_type_id = wt.id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[reliabilities] re
+		ON me.reliability_id = re.id
+	WHERE re.translation IN ('V')
+		AND wo.is_deleted = 0
+		AND value IS NOT NULL
+
+
+-- Check if #temp_combines exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_combines') IS NOT NULL
+	DROP TABLE #temp_combines
+
+	SELECT wo.id AS workout_id
+		,wo.[description] AS workout_description
+		,wo.player_id AS bane_player_id
+		,re.code AS workout_code
+		,re.[priority]
+		,wt.[type]
+		,wo.[date] AS workout_date
+		,me.measurable_type_id
+		,mt.code
+		,me.order_by AS attempt
+		,me.[value]
+		,RANK() OVER (PARTITION BY workout_id, re.[priority], measurable_type_id ORDER BY [value], me.order_by) AS measurable_order
+	INTO #temp_combines
+	FROM [BaneProductionAnalytics].[dbo].[workouts] wo
+	LEFT JOIN #temp_measurables me
+		ON wo.id = me.workout_id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[measurable_types] mt
+		ON me.measurable_type_id = mt.id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[player_workout_types] wt
+		ON wo.player_workout_type_id = wt.id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[reliabilities] re
+		ON me.reliability_id = re.id
+	WHERE re.translation IN ('I')
+		AND wo.is_deleted = 0
+		AND [value] IS NOT NULL
+		AND mt.code IN ('20YShuttle','3Cone','10YTime','20YTime','40YTime','60YShuttle')
+		AND NOT (wt.[type] = 'RPT' AND re.translation = 'I')  --Not from a scout entering the Combine numbers
+
+
+-- Check if #temp_verifieds_to_delete exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_verifieds_to_delete') IS NOT NULL
+	DROP TABLE #temp_verifieds_to_delete
+
+	SELECT ve.workout_id
+		,ve.bane_player_id
+		,ve.measurable_type_id
+		,ve.[priority]
+		,ve.attempt
+		,CASE WHEN ve.[value] = el.[value] OR ve.[value] = ha.[value] THEN 1 ELSE 0 END AS combine_duplication
+	INTO #temp_verifieds_to_delete
+	FROM #temp_verifieds ve
+	LEFT JOIN #temp_combines el
+		ON ve.bane_player_id = el.bane_player_id
+		AND ve.measurable_type_id = el.measurable_type_id
+		AND DATEDIFF(DY,ve.workout_date,el.workout_date) < 100
+		AND el.measurable_order = 1
+		AND el.[priority] = 1
+	LEFT JOIN #temp_combines ha
+		ON ve.bane_player_id = ha.bane_player_id
+		AND ve.measurable_type_id = ha.measurable_type_id
+		AND DATEDIFF(DY,ve.workout_date,ha.workout_date) < 100
+		AND ha.measurable_order = 1
+		AND ha.[priority] = 2
+	WHERE ve.[value] = el.[value] 
+		OR ve.[value] = ha.[value]
+
+
+
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 (6)
@@ -489,6 +593,8 @@ IF OBJECT_ID('tempdb..#temp_measurables_master') IS NOT NULL
 		ON pl.position_id = po.id
 	LEFT JOIN #temp_draft_board_positions_latest dbp
 		ON wo.player_id = dbp.player_id
+	LEFT JOIN #temp_verifieds_to_delete vd
+		ON wo.id = vd.workout_id
 	WHERE re.translation IN ('I','V','W','R') --Only Indy, Pro Day, Combine, or Workout numbers
 		AND wo.[description] NOT LIKE '%(VET)%' --Not from the Veteran Combine
 		AND NOT (wt.[type] = 'RPT' AND re.translation = 'I')  --Not from a scout entering the Combine numbers
@@ -497,6 +603,7 @@ IF OBJECT_ID('tempdb..#temp_measurables_master') IS NOT NULL
 		AND (pl.nfl_id IS NOT NULL OR pl.draft_year = @current_season + 1) --Only players who at least had one NFL transaction
 		AND pl.draft_year >= 2005
 		AND pl.draft_year <=  @current_season + 1
+		AND vd.combine_duplication IS NULL
 		AND value IS NOT NULL
 		AND ((mt.code = 'HgtCnv' AND value BETWEEN 40 AND 90)
 			OR (mt.code = 'Wgt' AND value BETWEEN 100 AND 450)
@@ -513,7 +620,7 @@ IF OBJECT_ID('tempdb..#temp_measurables_master') IS NOT NULL
 /*
 SELECT *
 FROM #temp_measurables_master
-WHERE bane_player_id = 90041
+WHERE bane_player_id = 72960
 ORDER BY workout_code desc, attempt, code
 */
 
@@ -840,7 +947,7 @@ Analytics.dbo.r_input_draft_model_expected_measurables
 		,right_turn
 		,rip_left
 		,swim_right
-		,2019 AS draft_model_year
+		,2020 AS draft_model_year
 		,GETDATE() AS created_date
 	FROM #temp_measurables me
 	LEFT JOIN #temp_height_fills hf
@@ -852,8 +959,8 @@ Analytics.dbo.r_input_draft_model_expected_measurables
 /*
 SELECT *
 FROM Analytics.dbo.r_input_draft_model_expected_measurables
-WHERE draft_model_year = 2019
-	AND created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_expected_measurables WHERE draft_model_year = 2019)
+WHERE draft_model_year = 2020
+	AND created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_expected_measurables WHERE draft_model_year = 2020)
 ORDER BY adjusted_priority, attempt
 */
 
@@ -907,11 +1014,11 @@ IF OBJECT_ID('tempdb..#temp_advanced_measurables') IS NOT NULL
 		,inp.bench_reps
 		,inp.bench_work
 		,inp.wonderlic
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN forty_dash ELSE forty_dash_adjusted END)) AS forty_dash
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN twenty_split ELSE twenty_split_adjusted END)) AS twenty_split
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN ten_split ELSE ten_split_adjusted END)) AS ten_split
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN flying_twenty ELSE flying_twenty_adjusted END)) AS flying_twenty
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN flying_ten ELSE flying_ten_adjusted END)) AS flying_ten
+		,forty_dash
+		,twenty_split
+		,ten_split
+		,flying_twenty
+		,flying_ten
 		,inp.short_shuttle
 		,inp.long_shuttle
 		,inp.three_cone
@@ -922,27 +1029,28 @@ IF OBJECT_ID('tempdb..#temp_advanced_measurables') IS NOT NULL
 		,inp.right_turn
 		,inp.rip_left
 		,inp.swim_right
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN forty_dash ELSE forty_dash_adjusted END) - expected_forty_dash) AS forty_dash_vs_expected
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN twenty_split ELSE twenty_split_adjusted END) - expected_twenty_split) AS twenty_split_vs_expected
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN ten_split ELSE ten_split_adjusted END) - expected_ten_split) AS ten_split_vs_expected
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN flying_twenty ELSE flying_twenty_adjusted END) - expected_flying_twenty) AS flying_twenty_vs_expected
-		,CONVERT(DECIMAL(20,6),(CASE WHEN inp.adjusted_priority = 1 THEN flying_ten ELSE flying_ten_adjusted END) - expected_flying_ten) AS flying_ten_vs_expected
-		,CONVERT(DECIMAL(20,6),long_shuttle - expected_long_shuttle) AS long_shuttle_vs_expected
-		,CONVERT(DECIMAL(20,6),short_shuttle - expected_short_shuttle) AS short_shuttle_vs_expected
-		,CONVERT(DECIMAL(20,6),fill_in_short_shuttle - expected_short_shuttle) AS fill_in_short_shuttle_vs_expected
-		,CONVERT(DECIMAL(20,6),fill_in_short_shuttle) AS fill_in_short_shuttle
-		,CONVERT(DECIMAL(20,6),three_cone - expected_three_cone) AS three_cone_vs_expected
-		,CONVERT(DECIMAL(20,6),fill_in_three_cone - expected_three_cone) AS fill_in_three_cone_vs_expected
-		,CONVERT(DECIMAL(20,6),fill_in_three_cone) AS fill_in_three_cone
-		,CONVERT(DECIMAL(20,6),broad_jump - expected_broad_jump) AS broad_jump_vs_expected
-		,CONVERT(DECIMAL(20,6),vertical_jump - expected_vertical_jump) AS vertical_jump_vs_expected
-		,CONVERT(DECIMAL(20,6),bench_reps - expected_bench_reps) AS bench_reps_vs_expected
-		,CONVERT(DECIMAL(20,6),bench_work - expected_bench_work) AS bench_work_vs_expected
-		,CONVERT(DECIMAL(20,6),swim_right - expected_swim_right) AS swim_right_vs_expected
-		,CONVERT(DECIMAL(20,6),rip_left - expected_rip_left) AS rip_left_vs_expected
-		,CONVERT(DECIMAL(20,6),left_turn - expected_left_turn) AS left_turn_vs_expected
-		,CONVERT(DECIMAL(20,6),right_turn - expected_right_turn) AS right_turn_vs_expected
-		,CONVERT(DECIMAL(20,6),throw_speed - expected_throw_speed) AS throw_speed_vs_expected
+		,forty_dash_adjusted
+		,twenty_split_adjusted
+		,ten_split_adjusted
+		,flying_twenty_adjusted
+		,flying_ten_adjusted
+		,expected_forty_dash
+		,expected_twenty_split
+		,expected_ten_split
+		,expected_flying_twenty
+		,expected_flying_ten
+		,expected_long_shuttle
+		,expected_short_shuttle
+		,expected_three_cone
+		,expected_broad_jump
+		,expected_vertical_jump
+		,expected_bench_reps
+		,expected_bench_work
+		,expected_swim_right
+		,expected_rip_left
+		,expected_left_turn
+		,expected_right_turn
+		,expected_throw_speed
 	INTO #temp_advanced_measurables
 	FROM Analytics.dbo.r_input_draft_model_expected_measurables inp
 	INNER JOIN Analytics.dbo.r_output_draft_model_expected_measurables outp
@@ -951,8 +1059,14 @@ IF OBJECT_ID('tempdb..#temp_advanced_measurables') IS NOT NULL
 		AND inp.attempt = outp.attempt
 		AND inp.draft_model_year = outp.draft_model_year
 		AND outp.created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_output_draft_model_expected_measurables)
-	WHERE inp.draft_model_year = 2019
+	WHERE inp.draft_model_year = 2020
 		AND inp.created_date = (SELECT MAX(created_date) FROM Analytics.dbo.r_input_draft_model_expected_measurables)
+
+
+UPDATE #temp_advanced_measurables
+SET adjusted_priority = 4
+WHERE adjusted_priority = 5
+
 
 /*
 SELECT *
@@ -1000,22 +1114,24 @@ OUTPUT TABLES:
 							,rip_left
 							,left_turn
 							,right_turn
-							,forty_dash_vs_expected
-							,twenty_split_vs_expected
-							,ten_split_vs_expected
-							,flying_twenty_vs_expected
-							,flying_ten_vs_expected
-							,short_shuttle_vs_expected
-							,fill_in_short_shuttle_vs_expected
-							,fill_in_short_shuttle
-							,long_shuttle_vs_expected
-							,three_cone_vs_expected
-							,fill_in_three_cone_vs_expected
-							,fill_in_three_cone
-							,swim_right_vs_expected
-							,rip_left_vs_expected
-							,left_turn_vs_expected
-							,right_turn_vs_expected
+							,forty_dash_adjusted
+							,twenty_split_adjusted
+							,ten_split_adjusted
+							,flying_twenty_adjusted
+							,flying_ten_adjusted
+							,expected_forty_dash
+							,expected_twenty_split
+							,expected_ten_split
+							,expected_flying_twenty
+							,expected_flying_ten
+							,expected_long_shuttle
+							,expected_short_shuttle
+							,expected_three_cone
+							,expected_swim_right
+							,expected_rip_left
+							,expected_left_turn
+							,expected_right_turn
+
 							)) AS me
 
 /*
@@ -1048,11 +1164,11 @@ FROM #temp_advanced_runs
 								,bench_work
 								,wonderlic
 								,throw_speed
-								,broad_jump_vs_expected
-								,vertical_jump_vs_expected
-								,bench_reps_vs_expected
-								,bench_work_vs_expected
-								,throw_speed_vs_expected
+								,expected_broad_jump
+								,expected_vertical_jump
+								,expected_bench_reps
+								,expected_bench_work
+								,expected_throw_speed
 								)) AS me
 
 /*
@@ -1080,7 +1196,7 @@ IF OBJECT_ID('tempdb..#temp_advanced_runs_with_order') IS NOT NULL
 	DROP TABLE #temp_advanced_runs_with_order
 
 	SELECT *
-		,RANK() OVER (PARTITION BY bane_player_id, measurable_type ORDER BY adjusted_priority, value, attempt) AS order_for_models
+		,RANK() OVER (PARTITION BY bane_player_id, measurable_type, adjusted_priority ORDER BY value, attempt) AS order_for_models
 		--,CASE WHEN adjusted_priority < 2 THEN 1 ELSE 0 END AS electronic
 	INTO #temp_advanced_runs_with_order
 	FROM #temp_advanced_runs
@@ -1095,7 +1211,7 @@ IF OBJECT_ID('tempdb..#temp_advanced_measures_with_order') IS NOT NULL
 	DROP TABLE #temp_advanced_measures_with_order
 
 	SELECT *
-		,RANK() OVER (PARTITION BY bane_player_id, measurable_type ORDER BY adjusted_priority, value DESC, attempt) AS order_for_models
+		,RANK() OVER (PARTITION BY bane_player_id, measurable_type, adjusted_priority ORDER BY value DESC, attempt) AS order_for_models
 		--,CASE WHEN adjusted_priority < 2 THEN 1 ELSE 0 END AS electronic
 	INTO #temp_advanced_measures_with_order
 	FROM #temp_advanced_measures
@@ -1158,69 +1274,205 @@ IF OBJECT_ID('tempdb..#temp_advanced_measurables_pivot') IS NOT NULL
 		,draft_year
 		,age_at_draft
 		,position
+		,adjusted_priority
 		,height
 		,[weight]
 		,hand_size
 		,arm_length
 		,wingspan
 		,broad_jump
-		,broad_jump_vs_expected
 		,vertical_jump
-		,vertical_jump_vs_expected
 		,bench_reps
-		,bench_reps_vs_expected
 		,bench_work
-		,bench_work_vs_expected
 		,wonderlic
 		,throw_speed
-		,throw_speed_vs_expected
 		,forty_dash
-		,forty_dash_vs_expected
 		,twenty_split
-		,twenty_split_vs_expected
 		,ten_split
-		,ten_split_vs_expected
 		,flying_twenty
-		,flying_twenty_vs_expected
 		,flying_ten
-		,flying_ten_vs_expected
 		,short_shuttle
-		,short_shuttle_vs_expected
-		,fill_in_short_shuttle_vs_expected
-		,fill_in_short_shuttle
 		,long_shuttle
-		,long_shuttle_vs_expected
 		,three_cone
-		,three_cone_vs_expected
-		,fill_in_three_cone_vs_expected
-		,fill_in_three_cone
 		,swim_right
-		,swim_right_vs_expected
 		,rip_left
-		,rip_left_vs_expected
 		,left_turn
-		,left_turn_vs_expected
 		,right_turn
-		,right_turn_vs_expected
+		,forty_dash_adjusted
+		,twenty_split_adjusted
+		,ten_split_adjusted
+		,flying_twenty_adjusted
+		,flying_ten_adjusted
+		,expected_broad_jump
+		,expected_vertical_jump
+		,expected_bench_reps
+		,expected_bench_work
+		,expected_throw_speed
+		,expected_forty_dash
+		,expected_twenty_split
+		,expected_ten_split
+		,expected_flying_twenty
+		,expected_flying_ten
+		,expected_long_shuttle
+		,expected_short_shuttle
+		,expected_three_cone
+		,expected_swim_right
+		,expected_rip_left
+		,expected_left_turn
+		,expected_right_turn
 	INTO #temp_advanced_measurables_pivot
 	FROM (
 	SELECT bane_player_id
 		,draft_year
 		,age_at_draft
 		,position
+		,adjusted_priority
 		,order_for_models
 		,measurable_type
 		,value
-	FROM #temp_advanced_measurables_all WHERE measurable_type IN ('height', 'weight', 'arm_length', 'wingspan', 'hand_size', 'broad_jump', 'broad_jump_vs_expected', 'vertical_jump', 'vertical_jump_vs_expected', 'bench_reps', 'bench_reps_vs_expected', 'bench_work', 'bench_work_vs_expected', 'wonderlic', 'throw_speed', 'throw_speed_vs_expected', 'forty_dash', 'forty_dash_vs_expected', 'twenty_split', 'twenty_split_vs_expected', 'ten_split', 'ten_split_vs_expected', 'flying_twenty', 'flying_twenty_vs_expected', 'flying_ten', 'flying_ten_vs_expected', 'short_shuttle', 'short_shuttle_vs_expected', 'fill_in_short_shuttle_vs_expected', 'fill_in_short_shuttle', 'long_shuttle', 'long_shuttle_vs_expected', 'three_cone', 'three_cone_vs_expected', 'fill_in_three_cone_vs_expected', 'fill_in_three_cone', 'swim_right', 'swim_right_vs_expected', 'rip_left', 'rip_left_vs_expected', 'right_turn', 'right_turn_vs_expected', 'left_turn', 'left_turn_vs_expected')) up
-	PIVOT (MAX(value) FOR measurable_type IN ([height], [weight], [arm_length], [wingspan], [hand_size], [broad_jump], [broad_jump_vs_expected], [vertical_jump], [vertical_jump_vs_expected], [bench_reps], [bench_reps_vs_expected], [bench_work], [bench_work_vs_expected], [wonderlic], [throw_speed], [throw_speed_vs_expected], [forty_dash], [forty_dash_vs_expected], [twenty_split], [twenty_split_vs_expected], [ten_split], [ten_split_vs_expected], [flying_twenty], [flying_twenty_vs_expected], [flying_ten], [flying_ten_vs_expected], [short_shuttle], [short_shuttle_vs_expected], [fill_in_short_shuttle_vs_expected], [fill_in_short_shuttle], [long_shuttle], [long_shuttle_vs_expected], [three_cone], [three_cone_vs_expected], [fill_in_three_cone_vs_expected], [fill_in_three_cone], [swim_right], [swim_right_vs_expected], [rip_left], [rip_left_vs_expected], [right_turn], [right_turn_vs_expected], [left_turn], [left_turn_vs_expected])) AS pvt
+	FROM #temp_advanced_measurables_all WHERE measurable_type IN ('height','weight','hand_size','arm_length','wingspan','broad_jump','vertical_jump','bench_reps','bench_work','wonderlic','throw_speed','expected_broad_jump','expected_vertical_jump','expected_bench_reps','expected_bench_work','expected_throw_speed','forty_dash','twenty_split','ten_split','flying_twenty','flying_ten','short_shuttle','long_shuttle','three_cone','swim_right','rip_left','left_turn','right_turn','forty_dash_adjusted','twenty_split_adjusted','ten_split_adjusted','flying_twenty_adjusted','flying_ten_adjusted','expected_forty_dash','expected_twenty_split','expected_ten_split','expected_flying_twenty','expected_flying_ten','expected_long_shuttle','expected_short_shuttle','expected_three_cone','expected_swim_right','expected_rip_left','expected_left_turn','expected_right_turn')) up
+	PIVOT(MAX(value) FOR measurable_type IN([height],[weight],[hand_size],[arm_length],[wingspan],[broad_jump],[vertical_jump],[bench_reps],[bench_work],[wonderlic],[throw_speed],[expected_broad_jump],[expected_vertical_jump],[expected_bench_reps],[expected_bench_work],[expected_throw_speed],[forty_dash],[twenty_split],[ten_split],[flying_twenty],[flying_ten],[short_shuttle],[long_shuttle],[three_cone],[swim_right],[rip_left],[left_turn],[right_turn],[forty_dash_adjusted],[twenty_split_adjusted],[ten_split_adjusted],[flying_twenty_adjusted],[flying_ten_adjusted],[expected_forty_dash],[expected_twenty_split],[expected_ten_split],[expected_flying_twenty],[expected_flying_ten],[expected_long_shuttle],[expected_short_shuttle],[expected_three_cone],[expected_swim_right],[expected_rip_left],[expected_left_turn],[expected_right_turn]))ASpvt
 	WHERE order_for_models = 1
 	ORDER BY bane_player_id
   
 /*
 SELECT * 
 FROM #temp_advanced_measurables_pivot
-WHERE bane_player_id = 7011
+WHERE bane_player_id = 	72960
 */
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+(************)
+
+Create a table with one indy row for each player and a table with one pro day row for each player. Append them into one measurables table.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_measurables_new_model exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_measurables_new_model') IS NOT NULL
+	DROP TABLE #temp_measurables_new_model
+
+	SELECT ih.bane_player_id
+		,ih.draft_year
+		,ih.age_at_draft
+		,ih.position
+		,'combine' AS workout_type
+		,ih.height
+		,ih.[weight]
+		,ih.hand_size
+		,ih.arm_length
+		,ih.wingspan
+		,ih.broad_jump
+		,ih.expected_broad_jump AS broad_jump_expected
+		,ih.vertical_jump
+		,ih.expected_vertical_jump AS vertical_jump_expected
+		,ih.bench_reps
+		,ih.expected_bench_reps AS bench_reps_expected
+		,ih.bench_work
+		,ih.expected_bench_work AS bench_work_expected
+		--,ih.wonderlic
+		,ih.throw_speed
+		,ih.expected_throw_speed AS throw_speed_expected
+		,ie.forty_dash AS forty_dash_electronic
+		,ih.forty_dash AS forty_dash_hand
+		,ih.forty_dash_adjusted AS forty_dash_adjusted
+		,ih.expected_forty_dash AS forty_dash_expected
+		,ie.twenty_split AS twenty_split_electronic
+		,ih.twenty_split AS twenty_split_hand
+		,ih.twenty_split_adjusted AS twenty_split_adjusted
+		,ih.expected_twenty_split AS twenty_split_expected
+		,ie.ten_split AS ten_split_electronic
+		,ih.ten_split AS ten_split_hand
+		,ih.ten_split_adjusted AS ten_split_adjusted
+		,ih.expected_ten_split AS ten_split_expected
+		,ie.flying_twenty AS flying_twenty_electronic
+		,ih.flying_twenty AS flying_twenty_hand
+		,ih.flying_twenty_adjusted AS flying_twenty_adjusted
+		,ih.expected_flying_twenty AS flying_twenty_expected
+		,ie.flying_ten AS flying_ten_electronic
+		,ih.flying_ten AS flying_ten_hand
+		,ih.flying_ten_adjusted AS flying_ten_adjusted
+		,ih.expected_flying_ten AS flying_ten_expected
+		,ih.short_shuttle
+		,ih.expected_short_shuttle AS short_shuttle_expected
+		,ih.long_shuttle
+		,ih.expected_long_shuttle AS long_shuttle_expected
+		,ih.three_cone
+		,ih.expected_three_cone AS three_cone_expected
+		,ih.swim_right
+		,ih.expected_swim_right AS swim_right_expected
+		,ih.rip_left
+		,ih.expected_rip_left AS rip_left_expected
+		,ih.left_turn
+		,ih.expected_left_turn AS left_turn_expected
+		,ih.right_turn
+		,ih.expected_right_turn AS right_turn_expected
+	INTO #temp_measurables_new_model
+	FROM #temp_advanced_measurables_pivot ih
+	LEFT JOIN #temp_advanced_measurables_pivot ie
+		ON ih.bane_player_id = ie.bane_player_id
+		AND ie.adjusted_priority = 1
+	WHERE ih.adjusted_priority IN (2)
+
+
+	INSERT INTO #temp_measurables_new_model
+	SELECT ih.bane_player_id
+		,ih.draft_year
+		,ih.age_at_draft
+		,ih.position
+		,'pro_day' AS workout_type
+		,ih.height
+		,ih.[weight]
+		,ih.hand_size
+		,ih.arm_length
+		,ih.wingspan
+		,ih.broad_jump
+		,ih.expected_broad_jump AS broad_jump_expected
+		,ih.vertical_jump
+		,ih.expected_vertical_jump AS vertical_jump_expected
+		,ih.bench_reps
+		,ih.expected_bench_reps AS bench_reps_expected
+		,ih.bench_work
+		,ih.expected_bench_work AS bench_work_expected
+		--,ih.wonderlic
+		,ih.throw_speed
+		,ih.expected_throw_speed AS throw_speed_expected
+		,NULL AS forty_dash_electronic
+		,ih.forty_dash AS forty_dash_hand
+		,ih.forty_dash_adjusted AS forty_dash_adjusted
+		,ih.expected_forty_dash AS forty_dash_expected
+		,NULL AS twenty_split_electronic
+		,ih.twenty_split AS twenty_split_hand
+		,ih.twenty_split_adjusted AS twenty_split_adjusted
+		,ih.expected_twenty_split AS twenty_split_expected
+		,NULL AS ten_split_electronic
+		,ih.ten_split AS ten_split_hand
+		,ih.ten_split_adjusted AS ten_split_adjusted
+		,ih.expected_ten_split AS ten_split_expected
+		,NULL AS flying_twenty_electronic
+		,ih.flying_twenty AS flying_twenty_hand
+		,ih.flying_twenty_adjusted AS flying_twenty_adjusted
+		,ih.expected_flying_twenty AS flying_twenty_expected
+		,NULL AS flying_ten_electronic
+		,ih.flying_ten AS flying_ten_hand
+		,ih.flying_ten_adjusted AS flying_ten_adjusted
+		,ih.expected_flying_ten AS flying_ten_expected
+		,ih.short_shuttle
+		,ih.expected_short_shuttle AS short_shuttle_expected
+		,ih.long_shuttle
+		,ih.expected_long_shuttle AS long_shuttle_expected
+		,ih.three_cone
+		,ih.expected_three_cone AS three_cone_expected
+		,ih.swim_right
+		,ih.expected_swim_right AS swim_right_expected
+		,ih.rip_left
+		,ih.expected_rip_left AS rip_left_expected
+		,ih.left_turn
+		,ih.expected_left_turn AS left_turn_expected
+		,ih.right_turn
+		,ih.expected_right_turn AS right_turn_expected
+	FROM #temp_advanced_measurables_pivot ih
+	WHERE ih.adjusted_priority IN (4)
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1230,319 +1482,88 @@ WHERE bane_player_id = 7011
 Join his best measurables to his pro grade and salary data.
 
 OUTPUT TABLES:
-Analytics.dbo.r_input_post_combine_measurables
+Analytics.dbo.r_input_post_combine_measurables_new_model
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 DECLARE @current_season INT
-SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+--SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+SELECT @current_season = 2020
 
---DELETE FROM Analytics.dbo.r_input_draft_model_post_combine_measurables
---WHERE draft_model_year = @current_season + 1
 
-INSERT INTO Analytics.dbo.r_input_draft_model_post_combine_measurables
+DELETE FROM Analytics.dbo.r_input_post_combine_measurables_new_model
+WHERE draft_model_year = 2020
+
+INSERT INTO Analytics.dbo.r_input_post_combine_measurables_new_model
     SELECT mp.bane_player_id
-		,mp.draft_year
-		,mp.age_at_draft
-		,CASE WHEN COALESCE(mp.position,pn.translation) = 'DC' AND position_defense = 'NB' THEN 'DC_SLOT'
-			WHEN COALESCE(mp.position,pn.translation) = 'WR' AND receiver_type = 'SLOT' THEN 'WR_SLOT'
-			ELSE COALESCE(mp.position,pn.translation)
-		END AS position
-		,mp.height
-		,mp.[weight]
-		,mp.hand_size
-		,mp.arm_length
-		,mp.wingspan
-		,mp.broad_jump
-		,mp.broad_jump_vs_expected
-		,mp.vertical_jump
-		,mp.vertical_jump_vs_expected
-		,mp.bench_reps
-		,mp.bench_reps_vs_expected
-		,mp.bench_work
-		,mp.bench_work_vs_expected
-		,mp.wonderlic
-		,mp.throw_speed
-		,mp.throw_speed_vs_expected
-		,mp.forty_dash
-		,mp.forty_dash_vs_expected
-		,mp.twenty_split
-		,mp.twenty_split_vs_expected
-		,mp.ten_split
-		,mp.ten_split_vs_expected
-		,mp.flying_twenty
-		,mp.flying_twenty_vs_expected
-		,mp.flying_ten
-		,mp.flying_ten_vs_expected
-		,mp.short_shuttle
-		,mp.short_shuttle_vs_expected
-		,mp.fill_in_short_shuttle_vs_expected
-		,mp.fill_in_short_shuttle
-		,mp.long_shuttle
-		,mp.long_shuttle_vs_expected
-		,mp.three_cone
-		,mp.three_cone_vs_expected
-		,mp.fill_in_three_cone_vs_expected
-		,mp.fill_in_three_cone
-		,mp.swim_right
-		,mp.swim_right_vs_expected
-		,mp.rip_left
-		,mp.rip_left_vs_expected
-		,mp.left_turn
-		,mp.left_turn_vs_expected
-		,mp.right_turn
-		,mp.right_turn_vs_expected
 		,CONCAT(pl.last_name,', ',pl.goes_by) AS player
-		,CASE WHEN pl.draft_year > @current_season OR sal.salaries IN ('Pre-2011') OR (pl.draft_year <= 2007 AND sal.salaries IS NULL) THEN NULL 
-			ELSE CASE WHEN sal.salaries IN ('Injured') THEN ins.salaries
-					ELSE COALESCE(CAST(sal.salaries AS FLOAT),0) 
-				END 
-		END AS pct_of_cap
-		,pg.season
-		,CASE WHEN pl.draft_year > @current_season THEN 1 ELSE season_in_league END AS season_in_league
-		,CASE WHEN pl.draft_year > @current_season THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
-		,@current_season + 1 AS draft_model_year
+		,mp.draft_year
+		,age_at_draft
+		,position
+		,workout_type
+		,height
+		,[weight]
+		,hand_size
+		,arm_length
+		,wingspan
+		,broad_jump
+		,broad_jump_expected
+		,vertical_jump
+		,vertical_jump_expected
+		,bench_reps
+		,bench_reps_expected
+		,bench_work
+		,bench_work_expected
+		--,wonderlic
+		,throw_speed
+		,throw_speed_expected
+		,forty_dash_electronic
+		,forty_dash_hand
+		,forty_dash_adjusted
+		,forty_dash_expected
+		,twenty_split_electronic
+		,twenty_split_hand
+		,twenty_split_adjusted
+		,twenty_split_expected
+		,ten_split_electronic
+		,ten_split_hand
+		,ten_split_adjusted
+		,ten_split_expected
+		,flying_twenty_electronic
+		,flying_twenty_hand
+		,flying_twenty_adjusted
+		,flying_twenty_expected
+		,flying_ten_electronic
+		,flying_ten_hand
+		,flying_ten_adjusted
+		,flying_ten_expected
+		,short_shuttle
+		,short_shuttle_expected
+		,long_shuttle
+		,long_shuttle_expected
+		,three_cone
+		,three_cone_expected
+		,swim_right
+		,swim_right_expected
+		,rip_left
+		,rip_left_expected
+		,left_turn
+		,left_turn_expected
+		,right_turn
+		,right_turn_expected
+		,pct_of_cap
+		,@current_season AS draft_model_year
 		,GETDATE() AS created_date
-		,0 AS alternate_data
-	FROM #temp_advanced_measurables_pivot mp
+	FROM #temp_measurables_new_model mp
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON mp.bane_player_id = pl.id
 		AND pl.is_deleted = 0
 	LEFT JOIN BaneProductionAnalytics.dbo.positions pn
 		ON pl.position_id = pn.id  
-	LEFT JOIN AnalyticsWork.dbo.salaries_for_modeling sal
-		ON mp.bane_player_id = sal.id
-		--AND sal.salaries NOT IN ('Injured','Pre-2011')
-	LEFT JOIN #temp_pro_grades pg
-		ON mp.bane_player_id = pg.bane_player_id
-		AND pg.created_date = (SELECT MAX(created_date) FROM #temp_pro_grades)
-	LEFT JOIN #temp_injured_salaries_one_row ins
-		ON pl.nfl_id = ins.nfl_player_id
-	LEFT JOIN #temp_season_position_offense poff
-		ON pg.bane_player_id = poff.bane_player_id
-		AND pg.season = poff.season
-	LEFT JOIN #temp_season_position_defense pdef
-		ON pg.bane_player_id = pdef.bane_player_id
-		AND pg.season = pdef.season
+	LEFT JOIN Analytics.dbo.r_input_draft_model_pct_of_cap pc
+		ON pl.id = pc.bane_player_id
 	WHERE pl.draft_year <= @current_season
-		OR (pl.draft_year IN (@current_season + 1,@current_season + 2) AND pg.season IS NULL)
+		OR pl.draft_year IN (@current_season + 1,@current_season + 2)
 
-	DELETE FROM Analytics.dbo.r_input_draft_model_post_combine_measurables
-	WHERE bane_player_id = 64668
-		AND position = 'WR'
-
-	--Add Lamar Jackson measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET three_cone_vs_expected = -0.0594643125000092
-		,flying_twenty_vs_expected = -0.141826559999999
-	WHERE bane_player_id = 88748
-
-	--Add Mike McGlinchey measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-	WHERE bane_player_id = 63864
-
-	--Add Rashaan Evans measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,flying_ten_vs_expected = 0
-	WHERE bane_player_id = 72961
-
-	--Add Quenton Nelson measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,twenty_split = 2.94
-	WHERE bane_player_id = 84627
-
-	--Add Arden Key measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-	WHERE bane_player_id = 	85615
-
-	--Add Chris Herndon measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET flying_twenty_vs_expected = 0
-	WHERE bane_player_id = 73531
-
-	--Add Vita Vea measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET vertical_jump = (SELECT AVG(vertical_jump) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'DT' AND draft_year >= 2016 AND weight BETWEEN 345 AND 350) 
-	WHERE bane_player_id = 87301
-
-	--Add Dallas Goedert measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET flying_twenty_vs_expected = 0
-	WHERE bane_player_id = 76704
-
-	--Add James Daniels measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET flying_ten_vs_expected = 0
-	WHERE bane_player_id = 87480
-
-	--Add Dante Pettis measurables
-	--UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	--SET flying_ten_vs_expected = 0
-		--,forty_dash_pass = 0
-	--WHERE bane_player_id = 80868
-
-	--Add Jordan Akins measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET flying_twenty_vs_expected = 1.922666 - 1.98710525
-	WHERE bane_player_id = 74096
-
-	--Add Geron Christian measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET broad_jump = (SELECT AVG(broad_jump) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'OT' AND draft_year >= 2016 AND weight BETWEEN 295 AND 300) 
-	WHERE bane_player_id = 	88463
-
-	--Add Martinas Rankin measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-	WHERE bane_player_id = 233243
-	
-	--Add Isaiah Wynn measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'OG' AND draft_year >= 2016 AND weight BETWEEN 310 AND 315)
-		,three_cone = (SELECT AVG(three_cone) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'OG' AND draft_year >= 2016 AND weight BETWEEN 310 AND 315)  
-	WHERE bane_player_id = 72871
-
-	--Add Billy Price measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET flying_ten_vs_expected = 0
-	WHERE bane_player_id = 78530
-
-	--Add Tim Settle measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET bench_reps = (SELECT AVG(bench_reps) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'DT' AND draft_year >= 2016 AND weight BETWEEN 325 AND 330) 
-	WHERE bane_player_id = 232674
-
-	--Add Duke Ejiofor measurables
-	--UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	--SET broad_jump = (SELECT AVG(broad_jump) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'OB' AND draft_year >= 2016 AND weight BETWEEN 260 AND 265) 
-		--,three_cone = (SELECT AVG(three_cone) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'OB' AND draft_year >= 2016 AND weight BETWEEN 260 AND 265) 
-		--,flying_twenty_vs_expected = 0
-	--WHERE bane_player_id = 61358
-
-	--Add Troy Fumagalli measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET flying_twenty_vs_expected = 0
-	WHERE bane_player_id = 82282
-
-	--Add Davin Bellamy measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET flying_twenty_vs_expected = 0
-	WHERE bane_player_id = 74106
-
-	--Add Jack Cichy measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET flying_ten_vs_expected = 0
-		,ten_split_vs_expected = 0
-	WHERE bane_player_id = 71450
-
-	--Add Bryce Love measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 198 AND 203) 
-		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 198 AND 203) 
-	WHERE bane_player_id = 88699
-
-	--Add Jalin Moore measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 210 AND 215) 
-		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 210 AND 215) 
-	WHERE bane_player_id = 73239
-
-	--Add Rodney Anderson measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 222 AND 227) 
-		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'RB' AND draft_year >= 2016 AND weight BETWEEN 222 AND 227) 
-	WHERE bane_player_id = 87228
-
-	--Add Chase Hansen measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 220 AND 225) 
-		,flying_twenty = (SELECT AVG(flying_twenty) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 220 AND 225) 
-		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 220 AND 225) 
-	WHERE bane_player_id = 89604
-
-	--Add Vosean Joseph measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 228 AND 233) 
-		,flying_twenty = (SELECT AVG(flying_twenty) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 228 AND 233) 
-		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 228 AND 233) 
-	WHERE bane_player_id = 232137
-
-	--Add David Long measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET twenty_split = (SELECT AVG(twenty_split) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 225 AND 230) 
-		,flying_twenty = (SELECT AVG(flying_twenty) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 225 AND 230) 
-		,short_shuttle = (SELECT AVG(short_shuttle) FROM Analytics.dbo.r_input_draft_model_post_combine_measurables WHERE position = 'IB' AND draft_year >= 2016 AND weight BETWEEN 225 AND 230) 
-	WHERE bane_player_id = 231572
-
-/*
-	--Add Kyler Murray measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-		,three_cone_vs_expected = 0
-	WHERE bane_player_id = 87653
-
-	--Add Marquise Brown measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET vertical_jump_vs_expected = 0
-		,short_shuttle_vs_expected = 0
-		,forty_dash_vs_expected = 0
-	WHERE bane_player_id = 	257484
-
-	--Add Jawaan Taylor measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET vertical_jump_vs_expected = 0
-		,ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-		,flying_ten_vs_expected = 0
-		,short_shuttle_vs_expected = 0
-	WHERE bane_player_id = 232135
-
-	--Add Max Scharping measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-		,flying_ten_vs_expected = 0
-	WHERE bane_player_id = 82212
-
-	--Add Connor McGovern measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-		,flying_ten_vs_expected = 0
-		,vertical_jump_vs_expected = 0
-	WHERE bane_player_id = 231485
-
-	--Add Yodny Cajuste measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET vertical_jump_vs_expected = 0
-		,ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-		,flying_ten_vs_expected = 0
-		,short_shuttle_vs_expected = 0
-	WHERE bane_player_id = 87551
-
-	--Add Ben Powers measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET ten_split_vs_expected = 0
-		,flying_twenty_vs_expected = 0
-		,flying_ten_vs_expected = 0
-	WHERE bane_player_id = 234540
-
-	--Add Dawson Knox measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET long_shuttle_vs_expected = 0
-	WHERE bane_player_id = 243695
-
-	--Add Kaden Smith measurables
-	UPDATE Analytics.dbo.r_input_draft_model_post_combine_measurables
-	SET long_shuttle_vs_expected = 0
-	WHERE bane_player_id = 260623
-*/
+		SELECT *
+		FROM Analytics.dbo.r_input_post_combine_measurables_new_model
