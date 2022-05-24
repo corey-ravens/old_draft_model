@@ -8,6 +8,269 @@ This is the code for creating the post combine overall grades data table.
 Board Grade, Max scout grade, Min scout grade in one table.
 
 v2 is for 2018
+v3 adds the grade blend from Eugene
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Get down to one row of draft board grade. Take a players draft
+board grade from as late in the process as available. 
+
+OUTPUT TABLES:
+#temp_draft_board_grades_latest
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_draft_board_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_grades') IS NOT NULL
+	DROP TABLE #temp_draft_board_grades
+
+	SELECT player_id AS bane_player_id
+		,gr.value AS grade
+		,CASE WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DRAFT' THEN 1
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-APR' THEN 2
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-FEB' THEN 3
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'POST-DEC' THEN 4
+			WHEN UPPER(LTRIM(RTRIM([type]))) = 'PRE-DEC' THEN 5
+			ELSE NULL
+		END AS order_by
+	INTO #temp_draft_board_grades
+	FROM [BaneProductionAnalytics].[dbo].[draft_board_grades] db
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[grades] gr
+		ON db.grade_id = gr.id
+	WHERE db.grade_id != ''
+		AND db.grade_id IS NOT NULL
+		AND player_id <> 64668
+		AND position_translation NOT IN ('RS','ST')
+
+
+-- Check if #temp_draft_board_grades_with_order exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_grades_with_order') IS NOT NULL
+	DROP TABLE #temp_draft_board_grades_with_order
+
+	SELECT bane_player_id
+		,grade
+		,RANK() OVER (PARTITION BY bane_player_id ORDER BY order_by) AS draft_board_grade_order
+	INTO #temp_draft_board_grades_with_order
+	FROM #temp_draft_board_grades
+
+/*
+SELECT *
+FROM #temp_draft_board_grades_with_order
+*/
+
+-- Check if #temp_draft_board_grades_latest exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_draft_board_grades_latest') IS NOT NULL
+	DROP TABLE #temp_draft_board_grades_latest
+
+	SELECT *
+	INTO #temp_draft_board_grades_latest
+	FROM #temp_draft_board_grades_with_order
+	WHERE draft_board_grade_order = 1
+
+/*
+SELECT *
+FROM #temp_draft_board_grades_latest
+*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the scout overall grades table.
+
+OUTPUT TABLES:
+#temp_evaluations_overall
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+DECLARE @current_season INT
+SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+
+-- Check if #temp_evaluations_overall exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_evaluations_overall') IS NOT NULL
+	DROP TABLE #temp_evaluations_overall
+
+	SELECT author_id AS scout_id
+		,re.player_id AS bane_player_id
+		,CASE WHEN re.position_id IS NULL THEN 'NONE' ELSE CASE WHEN po.abbreviation = 'DE43' THEN 'OB' ELSE translation END END AS position
+		,CASE WHEN us.[type] = 'coach' THEN 'coach'
+			ELSE re.[type]
+		END AS report_type
+		,CAST(gr.value AS NUMERIC (3,1)) AS grade_bucket
+		,CASE WHEN CAST(gr.value AS NUMERIC (3,1)) IN (8.0) THEN 100
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (7.0) THEN 92
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.9) THEN 82
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.7,6.5) THEN 71
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.4,6.3,6.2) THEN 64
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (6.1,6.0) THEN 58
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.9) THEN 53.5
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.8) THEN 50
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.7) THEN 47
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.6) THEN 45.5
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.4) THEN 43
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.2) THEN 41
+			WHEN CAST(gr.value AS NUMERIC (3,1)) IN (5.0) THEN 40
+			ELSE NULL
+		END AS grade_value            
+	INTO #temp_evaluations_overall
+	FROM [BaneProductionAnalytics].[dbo].[reports] re
+	INNER JOIN [BaneProductionAnalytics].[dbo].[taggings] t 
+		ON t.taggable_id = re.id 
+		AND UPPER(t.taggable_type) = 'REPORT'
+		AND t.tag_id = 11 --(it is a college report)
+	INNER JOIN [BaneProductionAnalytics].[dbo].[players] pl 
+		ON re.player_id = pl.id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[grades] gr
+		ON re.grade_id=gr.id
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[users] us
+		ON re.author_id=us.id    
+	LEFT JOIN [BaneProductionAnalytics].[dbo].[positions] po
+		ON re.position_id = po.id           
+	WHERE 1=1
+		AND re.is_deleted = 0
+		--AND UPPER(us.[type]) NOT LIKE '%COACH%' 
+		AND us.id NOT IN (58,81,41,74,67,36) 
+		AND UPPER(re.[type]) <> 'SPECIAL TEAMS' 
+		AND translation NOT IN ('ST','PK','PT','LS')
+		AND gr.scale_id IN (4,6) --(it is an overall grade)
+		AND re.[type] IN ('fall','all star game','cross-check','post cc','coach')
+		AND gr.[value] <> '2.0'
+		--AND MONTH(re.created_at) IN (6,7,8,9,10,11,12,1,2,3,4)
+		AND draft_year >= 2005
+		AND draft_year <= @current_season + 1
+
+/*
+SELECT *
+FROM #temp_evaluations_overall
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Join in the scout grade adjustment factors to create the adjusted grades
+
+OUTPUT TABLES:
+#temp_evaluations_adjusted
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_evaluations_adjusted exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_evaluations_adjusted') IS NOT NULL
+	DROP TABLE #temp_evaluations_adjusted
+
+	SELECT ev.*
+		,CASE WHEN ev.scout_id = 2 THEN grade_value ELSE grade_value - COALESCE(adjustment,0) END AS grade_value_adjusted --Scout ID 2 does not get a grade adjustment, it is the zero in the regression
+	INTO #temp_evaluations_adjusted
+	FROM #temp_evaluations_overall ev
+	LEFT JOIN Analytics.dbo.r_output_draft_model_post_combine_grade_adjustments ga
+		ON ev.scout_id = ga.scout_id
+		AND ga.skill_type = 'overall grade'
+		AND ev.position = ga.position
+		AND ga.grade_distribution = 'OLD'
+
+/*
+SELECT *
+FROM #temp_evaluations_adjusted
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Find the minimum and maximum scout grades.
+
+OUTPUT TABLES:
+#temp_scout_grades_min_max
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_scout_grades_min_max exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_scout_grades_min_max') IS NOT NULL
+	DROP TABLE #temp_scout_grades_min_max
+
+	SELECT bane_player_id
+		,MIN(grade_bucket) AS scout_bucket_min
+		,MAX(grade_bucket) AS scout_bucket_max
+		,MIN(grade_value) AS scout_value_min
+		,AVG(grade_value) AS scout_value_mean
+		,MAX(grade_value) AS scout_value_max
+		,VAR(grade_value) AS scout_value_variance
+		,STDEVP(grade_value) AS scout_value_stdev
+		,MIN(grade_value_adjusted) AS scout_value_adjusted_min
+		,AVG(grade_value_adjusted) AS scout_value_adjusted_mean
+		,MAX(grade_value_adjusted) AS scout_value_adjusted_max
+		,VAR(grade_value_adjusted) AS scout_value_adjusted_variance
+		,STDEVP(grade_value_adjusted) AS scout_value_adjusted_stdev
+		,SUM(grade_value * CASE WHEN report_type = 'coach' THEN 1.5 WHEN report_type = 'post cc' THEN 8 ELSE 1 END) AS scout_blend_sum
+		,SUM(grade_value_adjusted * CASE WHEN report_type = 'coach' THEN 1.5 WHEN report_type = 'post cc' THEN 8 ELSE 1 END) AS scout_adjusted_blend_sum
+		,SUM(CASE WHEN report_type = 'coach' THEN 1.5 WHEN report_type = 'post cc' THEN 8 ELSE 1 END) AS scout_blend_count
+	INTO #temp_scout_grades_min_max
+	FROM #temp_evaluations_adjusted
+	GROUP BY bane_player_id
+
+/*
+SELECT *
+FROM #temp_scout_grades_min_max
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Join the scout grades to the board grades
+
+OUTPUT TABLES:
+AnalyticsWork.dbo.draft_model_post_combine_overall_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+TRUNCATE TABLE AnalyticsWork.dbo.draft_model_post_combine_overall_grades
+
+INSERT INTO AnalyticsWork.dbo.draft_model_post_combine_overall_grades
+	SELECT sg.bane_player_id
+		,CAST(bg.grade AS NUMERIC (3,1)) AS board_bucket
+		,CASE WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (8.0) THEN 100
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (7.0) THEN 92
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (6.9) THEN 82
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (6.7,6.5) THEN 71
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (6.4) THEN 67
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (6.3) THEN 64
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (6.2) THEN 61
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (6.1,6.0) THEN 58
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (5.9) THEN 53.5
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (5.8) THEN 50
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (5.7) THEN 47
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (5.6) THEN 45.5
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (5.4) THEN 43
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (5.2) THEN 41
+			WHEN CAST(bg.grade AS NUMERIC (3,1)) IN (5.0) THEN 40
+			ELSE NULL
+		END AS board_value  
+		,scout_bucket_min
+		,scout_bucket_max
+		,scout_value_min
+		,scout_value_mean
+		,scout_value_max
+		,scout_value_adjusted_min
+		,scout_value_adjusted_mean
+		,scout_value_adjusted_max
+		,scout_value_variance
+		,scout_value_stdev
+		,scout_value_adjusted_variance
+		,scout_value_adjusted_stdev
+		,scout_blend_sum / NULLIF(scout_blend_count,0) AS scout_blend
+		,scout_adjusted_blend_sum / NULLIF(scout_blend_count,0) AS scout_adjusted_blend
+	FROM #temp_scout_grades_min_max sg
+	LEFT JOIN #temp_draft_board_grades_latest bg
+		ON sg.bane_player_id = bg.bane_player_id
+
+
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for creating the post combine overall grades data table.
+
+Board Grade, Max scout grade, Min scout grade in one table.
+
+v2 is for 2018
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
