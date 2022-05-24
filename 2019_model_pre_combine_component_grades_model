@@ -848,6 +848,28 @@ IF OBJECT_ID('tempdb..#temp_season_position_defense') IS NOT NULL
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Remove players who haven't yet been drafted from the pro grades table.
+
+OUTPUT TABLES:
+#temp_pro_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_pro_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_pro_grades') IS NOT NULL
+	DROP TABLE #temp_pro_grades
+
+	SELECT pg.*
+	INTO #temp_pro_grades
+	FROM Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON pg.bane_player_id = pl.id
+		AND pl.is_deleted = 0
+	WHERE draft_year <= @current_season
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 Join his pivoted college grades to the pivoted pro grades table.
 
 OUTPUT TABLES:
@@ -1058,7 +1080,7 @@ INSERT INTO Analytics.dbo.work_r_input_pre_combine_grades
 	LEFT JOIN AnalyticsWork.dbo.salaries_for_modeling sal
 		ON ep_mean.bane_player_id = sal.id
 		AND sal.salaries NOT IN ('Injured','Pre-2011')
-	LEFT JOIN Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
+	LEFT JOIN #temp_pro_grades pg
 		ON ep_mean.bane_player_id = pg.bane_player_id
 	LEFT JOIN #temp_injured_salaries_one_row ins
 		ON pl.nfl_id = ins.nfl_player_id
