@@ -1,0 +1,65 @@
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for combining the different Similar Players ("Comps") lists into one table for display on BANE.
+
+v2 is for 2018
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the overall model comp list.
+
+OUTPUT TABLES:
+#temp_overall_comps
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_overall_comps exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_overall_comps') IS NOT NULL
+	DROP TABLE #temp_overall_comps
+
+    SELECT target_bane_player_id
+		  ,comp_bane_player_id
+		  ,'overall' AS similarity_score_type
+		  ,CASE WHEN position_draft_board = 'WO' THEN 'WR' ELSE position_draft_board END AS position_translation
+		  ,score_combined AS similarity_score
+		  ,RANK() OVER (PARTITION BY target_bane_player_id ORDER BY score_combined) AS similarity_score_rank
+		  ,RANK() OVER (PARTITION BY target_bane_player_id, CASE WHEN position_draft_board = 'WO' THEN 'WR' ELSE position_draft_board END ORDER BY score_combined) AS similarity_score_rank_position
+		  ,2019 AS draft_model_year
+	  INTO #temp_overall_comps
+      FROM AnalyticsWork.dbo.draft_model_post_combine_overall_sim_scores
+	  WHERE model_type = 'PMCG'
+		AND score_combined IS NOT NULL
+
+/*
+SELECT *
+FROM #temp_overall_comps
+WHERE target_bane_player_id = 86614
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Add top 10 comps for every player for every type into a table that BANE can access.
+
+OUTPUT TABLES:
+Analytics.dbo.analysis_players_draft_model_similarity_scores
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+TRUNCATE TABLE Analytics.dbo.analysis_players_draft_model_similarity_scores
+
+INSERT INTO Analytics.dbo.analysis_players_draft_model_similarity_scores
+	SELECT target_bane_player_id
+		,comp_bane_player_id
+		,similarity_score_type
+		,position_translation
+		,similarity_score
+		,similarity_score_rank_position AS similarity_score_rank
+		,draft_model_year
+	FROM #temp_overall_comps
+	WHERE similarity_score_rank_position <= 10
