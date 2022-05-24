@@ -1,6 +1,40 @@
 
 
-SELECT me.[player_id]
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code joining the combined draft model outputs to player information.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Get down to the player's Average pro grade in his first 4 seasons.
+
+OUTPUT TABLES:
+##temp_average_pro_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_average_pro_grades exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_average_pro_grades') IS NOT NULL
+	DROP TABLE ##temp_average_pro_grades
+
+SELECT player_id
+      ,AVG(grade_scaled_mean) AS grade_scaled_mean
+INTO ##temp_average_pro_grades
+FROM [AnalyticsWork].[dbo].[draft2016_pro_grades_by_season] g1
+WHERE player_season_in_league >= 0
+  AND player_season_in_league <= 4
+GROUP BY player_id
+
+
+
+
+SELECT DISTINCT me.[player_id]
+	  ,goes_by
+	  ,last_name
+	  ,COALESCE(dbg.draft_year,nfl_entry_year,pl.draft_year) as nfl_entry_year
+	  ,[code] AS college
       ,[position_draft_board]
       ,[grade_scaled]
 	  ,CASE WHEN [grade_scaled] >= 96 THEN 8.0
@@ -17,10 +51,25 @@ SELECT me.[player_id]
 			WHEN [grade_scaled] >= 40.5 THEN 5.2
 			WHEN [grade_scaled] IS NOT NULL THEN 5.0
 			ELSE 2.0
-	   END AS grade_college
-	  ,first_name
-	  ,last_name
-	  ,COALESCE(dbg.draft_year,nfl_entry_year,pl.draft_year) as nfl_entry_year
+	   END AS grade_college_model
+	  ,grade_draft_board
+	  ,CASE WHEN [grade_scaled_mean] >= 93.5 THEN 8.0
+	        WHEN [grade_scaled_mean] >= 78.5 THEN 7.0
+			WHEN [grade_scaled_mean] >= 69 THEN 6.9 
+			WHEN [grade_scaled_mean] >= 62 THEN 6.3
+			WHEN [grade_scaled_mean] >= 55 THEN 6.0 
+			WHEN [grade_scaled_mean] >= 51.5 THEN 5.9
+			WHEN [grade_scaled_mean] >= 48.5 THEN 5.8
+			WHEN [grade_scaled_mean] >= 46.5 THEN 5.7
+			WHEN [grade_scaled_mean] >= 45.5 THEN 5.6
+			WHEN [grade_scaled_mean] >= 44.5 THEN 5.4
+			WHEN [grade_scaled_mean] >= 43.5 THEN 5.2
+			WHEN [grade_scaled_mean] IS NOT NULL THEN 5.0
+			ELSE 2.0
+	   END AS grade_pro_mean_first_4_seasons
+	  ,value_grades
+	  ,value_production
+	  ,value_measurables
   FROM [AnalyticsWork].[dbo].[draft2016_combined_model_output] me
 INNER JOIN [bane_production_analytics].[dbo].[players] pl
         ON me.player_id = pl.id
@@ -29,4 +78,8 @@ INNER JOIN [bane_production_analytics].[dbo].[players] pl
  LEFT JOIN [AnalyticsWork].[dbo].[draft2016_draft_board_grades] dbg
         ON me.player_id = dbg.player_id
 		AND dbg.draft_board_position_order = 1
+ LEFT JOIN ##temp_average_pro_grades pg
+        ON me.player_id = pg.player_id
+ LEFT JOIN [bane_production_analytics].[dbo].[schools] sc
+        ON pl.ncaa_club_id = sc.id
 	 WHERE grade_scaled = (SELECT MAX(grade_scaled) FROM [AnalyticsWork].[dbo].[draft2016_combined_model_output] me2 WHERE me2.player_id=me.player_id)
