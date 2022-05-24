@@ -1,0 +1,33 @@
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for combining all the different draft model outputs into one.
+
+Then create a row for every year for the player's first 4 seasons with his three model values.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Append the overall grades to the 3 to 7 scale grades.
+
+OUTPUT TABLES:
+##temp_model_values_meas_and_grades
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if ##temp_model_values_meas_and_grades exists, if it does drop it
+IF OBJECT_ID('##tempdb..temp_model_values_meas_and_grades') IS NOT NULL
+	DROP TABLE ##temp_model_values_meas_and_grades
+
+    SELECT *
+	  INTO ##temp_model_values_meas_and_grades
+      FROM [AnalyticsWork].[dbo].[draft2016_measurable_model_output]
+
+INSERT INTO ##temp_model_values_meas_and_grades
+	SELECT *
+	  FROM [AnalyticsWork].[dbo].[draft2016_grades_model_output]
+
+--SELECT * FROM ##temp_model_values_meas_and_grades
