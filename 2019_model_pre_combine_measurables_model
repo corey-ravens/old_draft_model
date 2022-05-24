@@ -9,6 +9,7 @@ and weight AND 40 time because that is all you have at that point.
 v2 changes to take weight that goes along with the best 40 time.
 v3 adds in slot WR and CB and salary for injured players
 v4 adds in the step to remove players not yet drafted from the first 4 seasons pro grades table
+v5 changes it to join weight and 40 in its own step before putting the height in
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -23,6 +24,9 @@ to build the models in the past need to be of the same type.
 BUT, when doing similar players analysis, you want to use the best measurable data you have for previous
 classes, even if it is from later in the process.  That's the reason for the two different commented
 WHERE clause parts. Depending on which analysis youre doing, you can switch between them.
+
+You use row_number() instead of rank() for measurable order becuase there are a couple players
+who have duplicate measurables (as of 02/01/2019 it's only a handful of players, so you might go back eventually).
 
 OUTPUT TABLES:
 #temp_measurables
@@ -50,11 +54,15 @@ IF OBJECT_ID('tempdb..#temp_measurables') IS NOT NULL
 		,re.code AS workout_code
 		,re.[priority]
 		,wt.[type]
-		,CASE WHEN mt.code IN ('Hgt','Wgt') THEN RANK() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority], me.value DESC, wt.[type], workout_id, me.order_by, me.import_key)
-			WHEN mt.code IN ('40YTime') THEN RANK() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority], me.value, wt.[type], workout_id, me.order_by, me.import_key)
+		,CASE WHEN mt.code IN ('Hgt','Wgt') THEN ROW_NUMBER() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority], me.value DESC, wt.[type], workout_id, me.order_by, me.import_key, me.created_at, me.updated_at)
+			WHEN mt.code IN ('40YTime') THEN ROW_NUMBER() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority], me.value, wt.[type], workout_id, me.order_by, me.import_key, me.created_at, me.updated_at)
 			ELSE NULL
 		END AS measurable_order_overall
-		,RANK() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority]) AS measurable_order_by_priority
+		,CASE WHEN mt.code IN ('Hgt','Wgt') THEN ROW_NUMBER() OVER (PARTITION BY wo.player_id, workout_id, me.measurable_type_id ORDER BY re.[priority], me.value DESC, wt.[type], me.order_by, me.import_key, me.created_at, me.updated_at)
+			WHEN mt.code IN ('40YTime') THEN ROW_NUMBER() OVER (PARTITION BY wo.player_id, workout_id, me.measurable_type_id ORDER BY re.[priority], me.value, wt.[type], me.order_by, me.import_key, me.created_at, me.updated_at)
+			ELSE NULL
+		END AS measurable_order_by_workout
+		,ROW_NUMBER() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority]) AS measurable_order_by_priority
 		,CASE WHEN mt.code IN ('Hgt') THEN CAST(LEFT(me.value,1) AS NUMERIC(1,0)) * 12 + CAST(RIGHT(LEFT(me.value,3),2) AS NUMERIC(2,0)) + CAST(RIGHT(LEFT(me.value,4),1) AS NUMERIC(1,0)) * 0.125
 			ELSE me.value 
 		END AS value
@@ -84,58 +92,67 @@ IF OBJECT_ID('tempdb..#temp_measurables') IS NOT NULL
 		OR (mt.code = 'Wgt' AND value BETWEEN 100 AND 450)
 		OR (mt.code = '40YTime' AND value BETWEEN 4.19 AND 7.00))
 
+--Miles Boykin didn't have any measurables rows with both weight and 40, so manually create one
+INSERT INTO #temp_measurables VALUES(742039,'NCAA Scouting Report - Joe Hortiz',232459,2019,'weight','P',11,'RPT',1,1,1,227.000000,'2018-08-14')
+
+--Devin Bush didn't have any measurables rows with both weight and 40, so manually create one
+INSERT INTO #temp_measurables VALUES(695733,'NCAA Scouting Report - Dwaune Jones',230826,2019,'weight','P',11,'RPT',1,1,1,240.000000,'2018-05-20')
+
+--Rashan Gary didn't have any measurables rows with both weight and 40, so manually create one
+INSERT INTO #temp_measurables VALUES(695734,'NCAA Scouting Report - Dwaune Jones',230831,2019,'weight','P',11,'RPT',1,1,1,281.000000,'2018-05-20')
+
 
 /*
 SELECT *
 FROM #temp_measurables
-WHERE bane_player_id = 35384
+WHERE bane_player_id = 44254
 ORDER BY measurable_type, priority
 */
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Create a table that finds the minimum 40 for the player at his top workout priority.
+Create a table that joins weights and 40 times so you always get the ones that are matched up.
 
 OUTPUT TABLES:
-#temp_bad_weights_removed
+#temp_40_joined_to_weights
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
--- Check if #temp_bad_weights_removed exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_bad_weights_removed') IS NOT NULL
-	DROP TABLE #temp_bad_weights_removed
+-- Check if #temp_40_joined_to_weights exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_40_joined_to_weights') IS NOT NULL
+	DROP TABLE #temp_40_joined_to_weights
 
     SELECT m1.workout_id
 		,m1.workout_description
 		,m1.bane_player_id
 		,m1.draft_year
-		,m1.measurable_type
 		,m1.workout_code
 		,m1.[priority]
 		,m1.[type]
 		,m1.measurable_order_overall
 		,m1.measurable_order_by_priority
-		,CASE WHEN m1.measurable_type = 'weight' AND m2.value IS NULL THEN NULL
-			ELSE m1.value
-		END AS value
-	INTO #temp_bad_weights_removed
+		,m1.measurable_order_by_workout
+		,ROW_NUMBER() OVER (PARTITION BY m1.bane_player_id ORDER BY m1.measurable_order_overall) AS new_forty_order
+		,m1.[value] AS forty_time
+		,m2.[value] AS [weight]
+	INTO #temp_40_joined_to_weights
 	FROM #temp_measurables m1
-	LEFT JOIN #temp_measurables m2
+	INNER JOIN #temp_measurables m2
 		ON m1.workout_id = m2.workout_id
-		AND m2.measurable_type = 'forty_time'
-		AND m1.measurable_type = 'weight'
-		AND m2.measurable_order_overall = 1
+		AND m2.measurable_type = 'weight'
+		AND m2.measurable_order_by_workout = 1
+	WHERE m1.measurable_type = 'forty_time'
 	   
 /*
 SELECT *
-FROM #temp_bad_weights_removed
-WHERE draft_year = 2015
+FROM #temp_40_joined_to_weights
+WHERE bane_player_id = 76347
 */
 
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Get rid of the measurable rows that you don't need for modeling.
+Join the heights to the weights and 40 times.
 
 OUTPUT TABLES:
 #temp_measurables_to_model
@@ -146,49 +163,20 @@ OUTPUT TABLES:
 IF OBJECT_ID('tempdb..#temp_measurables_to_model') IS NOT NULL
 	DROP TABLE #temp_measurables_to_model
 
-	SELECT *
+	SELECT fo.*
+		,me.[value] AS height
 	INTO #temp_measurables_to_model
-	FROM #temp_bad_weights_removed
-	WHERE (measurable_type = 'forty_time' AND measurable_order_overall = 1)
-		OR (measurable_type = 'height' AND measurable_order_overall = 1)
-		OR (measurable_type = 'weight' AND value IS NOT NULL)
-	   
+	FROM #temp_40_joined_to_weights fo
+	INNER JOIN #temp_measurables me
+		ON fo.bane_player_id = me.bane_player_id
+		AND me.measurable_type = 'height'
+		AND me.measurable_order_overall = 1
+	WHERE fo.new_forty_order = 1
+
 /*
 SELECT *
 FROM #temp_measurables_to_model
 WHERE draft_year = 2015
-*/
-
-/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Pivot the averages table so all measurables are in the same row.
-
-OUTPUT TABLES:
-#temp_measurables_pivot
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
--- Check if #temp_measurables_pivot exists, if it does drop it
-IF OBJECT_ID('tempdb..#temp_measurables_pivot') IS NOT NULL
-	DROP TABLE #temp_measurables_pivot
-
-	SELECT bane_player_id
-		,[weight] 
-		,height
-		,forty_time
-	INTO #temp_measurables_pivot
-	FROM (
-		SELECT bane_player_id
-		,measurable_type
-		,value
-		FROM #temp_measurables_to_model) up
-	PIVOT (MAX(value) FOR measurable_type IN ([height], [weight], [forty_time])) AS pvt
-	ORDER BY bane_player_id
-
-/*
-SELECT * 
-FROM #temp_measurables_pivot
-WHERE bane_player_id = 76347
 */
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -232,9 +220,9 @@ IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
 		,MAX([SalaryFit]) AS salaries
 	INTO #temp_injured_salaries
 	FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r1
-	WHERE report_week = 17
-		AND report_season = 2017
-		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 17 AND r2.report_season = 2017)
+	WHERE report_week = 6
+		AND report_season = @iSeason
+		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 6 AND r2.report_season = @iSeason)
 	GROUP BY PlayerID
 
 
@@ -242,9 +230,9 @@ IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
 	SELECT PlayerID AS nfl_player_id
 		,MAX([SalaryFit]) AS salaries
 	FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r1
-	WHERE report_week = 17
-		AND report_season = 2017
-		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 17 AND r2.report_season = 2017)
+	WHERE report_week = 6
+		AND report_season = @iSeason
+		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 6 AND r2.report_season = @iSeason)
 	GROUP BY PlayerID
 
 
@@ -332,9 +320,7 @@ Analytics.dbo.work_r_input_pre_combine_measurables
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-TRUNCATE TABLE Analytics.dbo.work_r_input_pre_combine_measurables
-
-INSERT INTO Analytics.dbo.work_r_input_pre_combine_measurables
+--INSERT INTO Analytics.dbo.r_input_draft_model_pre_combine_measurables
 	SELECT mp.bane_player_id
 		,CONCAT(pl.last_name,', ',pl.goes_by) AS player
 		,CASE WHEN pl.draft_year <= @iSeason THEN pl.draft_year
@@ -355,15 +341,17 @@ INSERT INTO Analytics.dbo.work_r_input_pre_combine_measurables
 		,mp.height
 		,mp.forty_time
 		,speed AS actual_forty_time
-		,CASE WHEN pl.draft_year > @iSeason OR sal.salaries IN ('Pre-2011') THEN NULL 
+		,CASE WHEN pl.draft_year > @iSeason OR sal.salaries IN ('Pre-2011') OR (pl.draft_year <= 2007 AND sal.salaries IS NULL) THEN NULL 
 			ELSE CASE WHEN sal.salaries IN ('Injured') THEN ins.salaries
-					ELSE ISNULL(CAST(sal.salaries AS FLOAT),0) 
+					ELSE COALESCE(CAST(sal.salaries AS FLOAT),0) 
 				END 
 		END AS pct_of_cap
 		,pg.season
 		,CASE WHEN pl.draft_year > @iSeason THEN 1 ELSE season_in_league END AS season_in_league
 		,CASE WHEN pl.draft_year > @iSeason THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
-	FROM #temp_measurables_pivot mp
+		,@iSeason + 1 AS draft_model_year
+		,GETDATE() AS created_date
+	FROM #temp_measurables_to_model mp
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON mp.bane_player_id = pl.id
 		AND pl.is_deleted = 0
@@ -373,14 +361,15 @@ INSERT INTO Analytics.dbo.work_r_input_pre_combine_measurables
 		ON mp.bane_player_id = ms.player_id
 	LEFT JOIN AnalyticsWork.dbo.salaries_for_modeling sal
 		ON mp.bane_player_id = sal.id
-		AND sal.salaries NOT IN ('Injured','Pre-2011')
+		--AND sal.salaries NOT IN ('Injured','Pre-2011')
+	LEFT JOIN #temp_injured_salaries_one_row ins
+		ON pl.nfl_id = ins.nfl_player_id
 	LEFT JOIN #temp_pro_grades pg
 		ON mp.bane_player_id = pg.bane_player_id
+		AND pg.created_date = (SELECT MAX(created_date) FROM #temp_pro_grades)
 	LEFT JOIN #temp_average_ages aa
 		ON pl.draft_year = aa.draft_year
 		AND pl.eligibility = aa.eligibility
-	LEFT JOIN #temp_injured_salaries_one_row ins
-		ON pl.nfl_id = ins.nfl_player_id
 	LEFT JOIN #temp_season_position_offense poff
 		ON pg.bane_player_id = poff.bane_player_id
 		AND pg.season = poff.season
