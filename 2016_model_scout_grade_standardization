@@ -793,6 +793,28 @@ INNER JOIN ##temp_scout_rating_standardization zscore
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   --********************  UNPIVOT THE PLAYERS' MEASURABLES  ********************
 
 -- Check if temp_ravens_measurables exists, if it does drop it
@@ -882,8 +904,8 @@ SELECT DISTINCT CollegePlayerID
 	IF OBJECT_ID('tempdb..##temp_ravens_measurables_unpivot') IS NOT NULL
 		DROP TABLE ##temp_ravens_measurables_unpivot
 
-	SELECT CollegePlayerID
-		   player_id
+	SELECT CollegePlayerID as college_player_id
+		  ,player_id
 	      ,GSISID
 	      ,report_position
 		  ,measurables.measurable_type
@@ -937,34 +959,117 @@ INNER JOIN ##temp_measurable_mean_and_stdev zscore
         ON measurables.measurable_type=zscore.measurable_type
 	   AND measurables.report_position=zscore.report_position
   ORDER BY player_id
+  
 
+-- Check if temp_measurables_z_scores_all exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_measurables_z_scores_all') IS NOT NULL
+	DROP TABLE ##temp_measurables_z_scores_all
 
-  	-- Check if temp_ravens_measurables_unpivot exists, if it does drop it
-	IF OBJECT_ID('tempdb..##temp_ravens_measurables_unpivot') IS NOT NULL
-		DROP TABLE ##temp_ravens_measurables_unpivot
-
-	SELECT CollegePlayerID
-		   player_id
+    SELECT player_id
 	      ,GSISID
 	      ,report_position
-		  ,measurables.measurable_type
-		  ,measurables.measurable
-	  INTO ##temp_ravens_measurables_unpivot
-      FROM ##temp_ravens_measurables
-   UNPIVOT (measurable FOR measurable_type IN (height
-								        ,weight
-								        ,arm_length
-								        ,hand_span
-								        ,wing_span
-								        ,test_correct
-								        ,forty_yard_dash
-								        ,twenty_yard_dash
-								        --,ten_yard_dash
-								        --,bench_press_reps
-								        ,broad_jump
-								        ,three_cone
-								        ,vertical_jump
-								        ,short_shuttle
-								        ,long_shuttle
-								        ,long_snap
-										)) AS measurables
+		  ,height AS height_z_score
+		  ,weight AS weight_z_score
+		  ,arm_length AS arm_length_z_score
+		  ,hand_span AS hand_span_z_score
+		  ,wing_span AS wing_span_z_score
+		  ,test_correct AS test_correct_z_score
+		  ,forty_yard_dash AS forty_yard_dash_z_score
+		  ,twenty_yard_dash AS twenty_yard_dash_z_score
+		  ,broad_jump AS broad_jump_z_score
+		  ,three_cone AS three_cone_z_score
+		  ,vertical_jump AS vertical_jump_z_score
+		  ,short_shuttle AS short_shuttle_z_score
+		  ,long_shuttle AS long_shuttle_z_score
+		  ,long_snap AS long_snap_z_score
+	  INTO ##temp_measurables_z_scores_all
+      FROM (
+    SELECT player_id
+	      ,GSISID
+	      ,report_position
+		  ,measurable_type
+		  ,measurable_z_score
+      FROM ##temp_measurables_with_z_scores) up
+     PIVOT (SUM(measurable_z_score) FOR measurable_type IN (height, weight, arm_length, hand_span,wing_span,test_correct,forty_yard_dash,twenty_yard_dash,broad_jump,three_cone,vertical_jump,short_shuttle,long_shuttle,long_snap)) AS pvt
+  ORDER BY player_id
+
+-- Assign Target Player and create all the empty variables for his measurables to go into
+
+DECLARE @player_id AS INT = 41308
+
+--These variables are for his z-scores
+DECLARE @main_player_height_z_score AS NUMERIC(9,7)
+DECLARE @main_player_weight_z_score AS NUMERIC(9,7)
+DECLARE @main_player_arm_length_z_score AS NUMERIC(9,7)
+DECLARE @main_player_hand_span_z_score AS NUMERIC(9,7)
+DECLARE @main_player_wing_span_z_score AS NUMERIC(9,7)
+DECLARE @main_player_test_correct_z_score AS NUMERIC(9,7)
+DECLARE @main_player_forty_yard_dash_z_score AS NUMERIC(9,7)
+DECLARE @main_player_twenty_yard_dash_z_score AS NUMERIC(9,7)
+DECLARE @main_player_ten_yard_dash_z_score AS NUMERIC(9,7)
+DECLARE @main_player_bench_press_reps_z_score AS NUMERIC(9,7)
+DECLARE @main_player_broad_jump_z_score AS NUMERIC(9,7)
+DECLARE @main_player_three_cone_z_score AS NUMERIC(9,7)
+DECLARE @main_player_vertical_jump_z_score AS NUMERIC(9,7)
+DECLARE @main_player_short_shuttle_z_score AS NUMERIC(9,7)
+DECLARE @main_player_long_shuttle_z_score AS NUMERIC(9,7)
+DECLARE @main_player_long_snap_z_score AS NUMERIC(9,7)
+
+
+-- Select the target player's measurable z-scores into the empty variables
+    SELECT @main_player_height_z_score = height_z_score
+		  ,@main_player_weight_z_score = weight_z_score
+	      ,@main_player_arm_length_z_score = arm_length_z_score
+		  ,@main_player_hand_span_z_score = hand_span_z_score
+		  ,@main_player_wing_span_z_score = wing_span_z_score
+		  ,@main_player_test_correct_z_score = test_correct_z_score
+		  ,@main_player_forty_yard_dash_z_score = forty_yard_dash_z_score
+		  ,@main_player_twenty_yard_dash_z_score = twenty_yard_dash_z_score
+		  --,@main_player_ten_yard_dash_z_score = ten_yard_dash_z_score
+		  --,@main_player_bench_press_reps_z_score = bench_press_reps_z_score
+		  ,@main_player_broad_jump_z_score = broad_jump_z_score
+		  ,@main_player_three_cone_z_score = three_cone_z_score
+		  ,@main_player_vertical_jump_z_score = vertical_jump_z_score
+		  ,@main_player_short_shuttle_z_score = short_shuttle_z_score
+		  ,@main_player_long_shuttle_z_score = long_shuttle_z_score
+		  ,@main_player_long_snap_z_score = long_snap_z_score
+      FROM ##temp_measurables_z_scores_all
+	 WHERE player_id=@player_id
+
+-- Check if temp_measurables_z_scores_differences, if it does drop it
+IF OBJECT_ID('tempdb..##temp_measurables_z_scores_differences') IS NOT NULL
+	DROP TABLE ##temp_measurables_z_scores_differences
+
+-- now create a table that gets the difference between the main player and all other players (at his position only? or should we allow cross position comps?)
+-- Find the z-score differences between the target player and all other players
+    SELECT player_id
+	      ,GSISID
+		  ,report_position
+	      --,first_name
+	      --,last_name
+	      ,CASE WHEN @main_player_height_z_score IS NOT NULL THEN ABS(height_z_score-@main_player_height_z_score) ELSE NULL END AS height_z_score_difference
+		  ,CASE WHEN @main_player_weight_z_score IS NOT NULL THEN ABS(weight_z_score-@main_player_weight_z_score) ELSE NULL END AS weight_z_score_difference
+	      ,CASE WHEN @main_player_arm_length_z_score IS NOT NULL THEN ABS(arm_length_z_score-@main_player_arm_length_z_score) ELSE NULL END AS arm_length_z_score_difference
+		  ,CASE WHEN @main_player_hand_span_z_score IS NOT NULL THEN ABS(hand_span_z_score-@main_player_hand_span_z_score) ELSE NULL END AS hand_span_z_score_difference
+		  ,CASE WHEN @main_player_wing_span_z_score IS NOT NULL THEN ABS(wing_span_z_score-@main_player_wing_span_z_score) ELSE NULL END AS wing_span_z_score_difference
+		  ,CASE WHEN @main_player_test_correct_z_score IS NOT NULL THEN ABS(test_correct_z_score-@main_player_test_correct_z_score) ELSE NULL END AS test_correct_z_score_difference
+		  ,CASE WHEN @main_player_forty_yard_dash_z_score IS NOT NULL THEN ABS(forty_yard_dash_z_score-@main_player_forty_yard_dash_z_score) ELSE NULL END AS forty_yard_dash_z_score_difference
+		  ,CASE WHEN @main_player_twenty_yard_dash_z_score IS NOT NULL THEN ABS(twenty_yard_dash_z_score-@main_player_twenty_yard_dash_z_score) ELSE NULL END AS twenty_yard_dash_z_score_difference
+		  --,CASE WHEN @main_player_ten_yard_dash_z_score IS NOT NULL THEN ABS(ten_yard_dash_z_score-@main_player_ten_yard_dash_z_score) ELSE NULL END AS ten_yard_dash_z_score_difference
+		  --,CASE WHEN @main_player_bench_press_reps_z_score IS NOT NULL THEN ABS(bench_press_reps_z_score-@main_player_bench_press_reps_z_score) ELSE NULL END AS bench_press_reps_z_score_difference
+		  ,CASE WHEN @main_player_broad_jump_z_score IS NOT NULL THEN ABS(broad_jump_z_score-@main_player_broad_jump_z_score) ELSE NULL END AS broad_jump_z_score_difference
+		  ,CASE WHEN @main_player_three_cone_z_score IS NOT NULL THEN ABS(three_cone_z_score-@main_player_three_cone_z_score) ELSE NULL END AS three_cone_z_score_difference
+		  ,CASE WHEN @main_player_vertical_jump_z_score IS NOT NULL THEN ABS(vertical_jump_z_score-@main_player_vertical_jump_z_score) ELSE NULL END AS vertical_jump_z_score_difference
+		  ,CASE WHEN @main_player_short_shuttle_z_score IS NOT NULL THEN ABS(short_shuttle_z_score-@main_player_short_shuttle_z_score) ELSE NULL END AS short_shuttle_z_score_difference
+		  ,CASE WHEN @main_player_long_shuttle_z_score IS NOT NULL THEN ABS(long_shuttle_z_score-@main_player_long_shuttle_z_score) ELSE NULL END AS long_shuttle_z_score_difference
+		  ,CASE WHEN @main_player_long_snap_z_score IS NOT NULL THEN ABS(long_snap_z_score-@main_player_long_snap_z_score) ELSE NULL END AS long_snap_z_score_difference
+	  INTO ##temp_measurables_z_scores_differences
+	  FROM ##temp_measurables_z_scores_all 
+	 WHERE player_id!=@player_id
+  
+    SELECT *
+      FROM ##temp_measurables_z_scores_differences zdiff
+INNER JOIN RavensIncoming.dbo.club_db_player_extracts player
+		  ON zdiff.player_id=player.id
+
+
