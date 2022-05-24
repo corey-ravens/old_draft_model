@@ -72,9 +72,7 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 	DROP TABLE ##temp_measurables_master
 
     SELECT wo.id AS workout_id
-	      ,wo.[date] AS workout_date
 		  ,wo.[description] AS workout_description
-		  ,wt.[type] AS workout_type
 		  ,CASE WHEN re.id = 1 THEN 1
 		        WHEN re.id = 2 THEN 3
 				WHEN re.id != 1 AND UPPER(re.[description]) LIKE '%ELECTRONIC%' THEN 2
@@ -86,8 +84,6 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 				ELSE NULL
 		   END AS workout_type_for_models
 	      ,wo.player_id
-		  ,wo.nfl_player_id
-		  ,wo.college_player_id
 		  ,me.measurable_type_id
 		  ,mt.code
 		  ,CASE WHEN re.id IS NULL THEN CASE WHEN wt.[type] = 'COMB' THEN 2
@@ -97,20 +93,6 @@ IF OBJECT_ID('tempdb..##temp_measurables_master') IS NOT NULL
 										END	  
 		        ELSE re.id 
 		   END AS reliability_id
-		  ,CASE WHEN re.[description] IS NULL THEN CASE WHEN wt.[type] = 'COMB' THEN 'Indy Handheld'
-		                                     WHEN wt.[type] IN ('RCOMB','ALLSTAR','APT','SRCOMB','PDAY') THEN 'Workout (example: APT)'
-											 WHEN wt.[type] IN ('LW','PW') THEN 'Verified'
-											 ELSE NULL
-										END	  
-		        ELSE re.[description]
-		   END AS reliability_description
-		  ,CASE WHEN re.translation IS NULL THEN CASE WHEN wt.[type] = 'COMB' THEN 'I'
-		                                     WHEN wt.[type] IN ('RCOMB','ALLSTAR','APT','SRCOMB','PDAY') THEN 'W'
-											 WHEN wt.[type] IN ('LW','PW') THEN 'V'
-											 ELSE NULL
-										END	  
-		        ELSE re.translation
-		   END AS translation
 		  ,me.order_by AS attempt
 		  ,me.value
 	  INTO ##temp_measurables_master
@@ -171,16 +153,10 @@ IF OBJECT_ID('tempdb..##temp_runs_advanced_pivot') IS NOT NULL
 	DROP TABLE ##temp_runs_advanced_pivot
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,[40YTime] AS dash_forty
 	      ,[20YTime] AS dash_twenty
@@ -191,17 +167,11 @@ IF OBJECT_ID('tempdb..##temp_runs_advanced_pivot') IS NOT NULL
 	  INTO ##temp_runs_advanced_pivot
       FROM (
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 		  ,value
       FROM ##temp_measurables_master WHERE code IN ('40YTime', '20YTime', '10YTime', '20YShuttle', '3Cone', '60YShuttle')) up
@@ -216,16 +186,10 @@ IF OBJECT_ID('tempdb..##temp_measures_advanced_pivot') IS NOT NULL
 	DROP TABLE ##temp_measures_advanced_pivot
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 -----------Don't use attempt here, you're just taking the best measurements. You can't do that with the Dashes because the Flying Times need to be taken by attempt.
 		  ,[Wgt] AS [weight]
 	      ,[HgtCnv] AS height
@@ -239,16 +203,10 @@ IF OBJECT_ID('tempdb..##temp_measures_advanced_pivot') IS NOT NULL
 	  INTO ##temp_measures_advanced_pivot
       FROM (
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,code
 		  ,value
       FROM ##temp_measurables_master WHERE code IN ('Wgt', 'HgtCnv', 'ArmLngCnv', 'WSpanCnv', 'HSpanCnv', 'BroadJumpCnv','VertJumpCnv', 'StrengthReps225', 'TestScore')) up
@@ -264,16 +222,10 @@ IF OBJECT_ID('tempdb..##temp_advanced_pivot') IS NOT NULL
 	DROP TABLE ##temp_advanced_pivot
 
     SELECT COALESCE(ru.workout_id,me.workout_id) AS workout_id
-	      ,COALESCE(ru.workout_date,me.workout_date) AS workout_date
 		  ,COALESCE(ru.workout_description,me.workout_description) AS workout_description
-		  ,COALESCE(ru.workout_type,me.workout_type) AS workout_type
 		  ,COALESCE(ru.workout_type_for_models,me.workout_type_for_models) AS workout_type_for_models
 	      ,COALESCE(ru.player_id,me.player_id) AS player_id
-		  ,COALESCE(ru.nfl_player_id,me.nfl_player_id) AS nfl_player_id
-		  ,COALESCE(ru.college_player_id,me.college_player_id) AS college_player_id
 		  ,COALESCE(ru.reliability_id,me.reliability_id) AS reliability_id
-		  ,COALESCE(ru.reliability_description,me.reliability_description) AS reliability_description
-		  ,COALESCE(ru.translation,me.translation) AS translation
 		  ,attempt
 	      ,dash_forty
 	      ,dash_twenty
@@ -366,18 +318,12 @@ IF OBJECT_ID('tempdb..##temp_flyings_ten') IS NOT NULL
 	DROP TABLE ##temp_flyings_ten
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Flying10Time' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,(dash_twenty-dash_ten) AS value
 	  INTO ##temp_flyings_ten
@@ -397,18 +343,12 @@ IF OBJECT_ID('tempdb..##temp_flyings_twenty') IS NOT NULL
 	DROP TABLE ##temp_flyings_twenty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Flying20Time' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,(dash_forty-dash_twenty) AS value
 	  INTO ##temp_flyings_twenty
@@ -428,18 +368,12 @@ IF OBJECT_ID('tempdb..##temp_accelerations_ten') IS NOT NULL
 	DROP TABLE ##temp_accelerations_ten
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Acceleration10' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,2*(10*0.9144)/POWER(dash_ten,2) AS value
 	  INTO ##temp_accelerations_ten
@@ -458,18 +392,12 @@ IF OBJECT_ID('tempdb..##temp_accelerations_twenty') IS NOT NULL
 	DROP TABLE ##temp_accelerations_twenty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Acceleration20' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/POWER((dash_twenty-dash_ten),2) AS value
 	  INTO ##temp_accelerations_twenty
@@ -489,18 +417,12 @@ IF OBJECT_ID('tempdb..##temp_accelerations_forty') IS NOT NULL
 	DROP TABLE ##temp_accelerations_forty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Acceleration40' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,2*(20-(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)))/POWER(dash_forty-dash_twenty,2) AS value
 	  INTO ##temp_accelerations_forty
@@ -521,18 +443,12 @@ IF OBJECT_ID('tempdb..##temp_velocities_ten') IS NOT NULL
 	DROP TABLE ##temp_velocities_ten
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Velocity10' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,2*(10*0.9144)/dash_ten AS value
 	  INTO ##temp_velocities_ten
@@ -551,18 +467,12 @@ IF OBJECT_ID('tempdb..##temp_velocities_twenty') IS NOT NULL
 	DROP TABLE ##temp_velocities_twenty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Velocity20' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)/dash_ten AS value
 	  INTO ##temp_velocities_twenty
@@ -582,18 +492,12 @@ IF OBJECT_ID('tempdb..##temp_velocities_forty') IS NOT NULL
 	DROP TABLE ##temp_velocities_forty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Velocity40' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,2*(20-(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)))/(dash_forty-dash_twenty) AS value
 	  INTO ##temp_velocities_forty
@@ -615,18 +519,12 @@ IF OBJECT_ID('tempdb..##temp_momentums_ten') IS NOT NULL
 	DROP TABLE ##temp_momentums_ten
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Momentum10' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,([weight]*0.453592)*(2*(10*0.9144)/dash_ten) AS value
 	  INTO ##temp_momentums_ten
@@ -647,18 +545,12 @@ IF OBJECT_ID('tempdb..##temp_momentums_twenty') IS NOT NULL
 	DROP TABLE ##temp_momentums_twenty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Momentum20' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,([weight]*0.453592)*(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)) AS value
 	  INTO ##temp_momentums_twenty
@@ -680,18 +572,12 @@ IF OBJECT_ID('tempdb..##temp_momentums_forty') IS NOT NULL
 	DROP TABLE ##temp_momentums_forty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Momentum40' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,([weight]*0.453592)*(2*(20-(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)))/(dash_forty-dash_twenty)) AS value
 	  INTO ##temp_momentums_forty
@@ -715,18 +601,12 @@ IF OBJECT_ID('tempdb..##temp_works_ten') IS NOT NULL
 	DROP TABLE ##temp_works_ten
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Work10' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,([weight]*0.453592)*POWER((2*(10*0.9144)/dash_ten),2)*10 AS value
 	  INTO ##temp_works_ten
@@ -748,18 +628,12 @@ IF OBJECT_ID('tempdb..##temp_works_twenty') IS NOT NULL
 	DROP TABLE ##temp_works_twenty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Work20' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,([weight]*0.453592)*(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/POWER((dash_twenty-dash_ten),2))*10 AS value
 	  INTO ##temp_works_twenty
@@ -782,18 +656,12 @@ IF OBJECT_ID('tempdb..##temp_works_forty') IS NOT NULL
 	DROP TABLE ##temp_works_forty
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'Work40' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,([weight]*0.453592)*(2*(20-(2*(10-((2*(10*0.9144)/dash_ten)*(dash_twenty-dash_ten)))/(dash_twenty-dash_ten)))/POWER(dash_forty-dash_twenty,2))*20 AS value
 	  INTO ##temp_works_forty
@@ -815,18 +683,12 @@ IF OBJECT_ID('tempdb..##temp_speed_scores_barnwell') IS NOT NULL
 	DROP TABLE ##temp_speed_scores_barnwell
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'SpeedScoreBarnwell' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,([weight]*200)/POWER(dash_forty,4) AS value
 	  INTO ##temp_speed_scores_barnwell
@@ -846,18 +708,12 @@ IF OBJECT_ID('tempdb..##temp_speed_scores_adjusted') IS NOT NULL
 	DROP TABLE ##temp_speed_scores_adjusted
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'SpeedScoreAdjusted' AS code
 		  ,reliability_id
-		  ,reliability_description
-		  ,translation
 		  ,attempt
 	      ,([weight] * 125)/(dash_forty *dash_ten*shuttle_short*three_cone) AS value
 	  INTO ##temp_speed_scores_adjusted
@@ -880,18 +736,12 @@ IF OBJECT_ID('tempdb..##temp_speed_scores_cohen') IS NOT NULL
 	DROP TABLE ##temp_speed_scores_cohen
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'SpeedScoreCohen' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,MIN(dash_forty)+MIN(dash_ten)+MIN(shuttle_short)+MIN(three_cone) AS value
 	  INTO ##temp_speed_scores_cohen
@@ -901,13 +751,9 @@ IF OBJECT_ID('tempdb..##temp_speed_scores_cohen') IS NOT NULL
 	   AND shuttle_short IS NOT NULL
 	   AND three_cone IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_speed_scores_cohen
@@ -921,18 +767,12 @@ IF OBJECT_ID('tempdb..##temp_lateral_agility_scores') IS NOT NULL
 	DROP TABLE ##temp_lateral_agility_scores
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'LateralAgility' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,(MIN(dash_forty)-MIN(shuttle_short)) AS value
 	  INTO ##temp_lateral_agility_scores
@@ -940,13 +780,9 @@ IF OBJECT_ID('tempdb..##temp_lateral_agility_scores') IS NOT NULL
 	 WHERE dash_forty IS NOT NULL
 	   AND shuttle_short IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
 
 --SELECT * FROM ##temp_lateral_agility_scores
@@ -960,18 +796,12 @@ IF OBJECT_ID('tempdb..##temp_explosions_index') IS NOT NULL
 	DROP TABLE ##temp_explosions_index
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'ExplosionIndex' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,MAX(jump_vertical) + MAX(jump_broad)/12 + MAX(bench_reps) AS value
 	  INTO ##temp_explosions_index
@@ -980,13 +810,9 @@ IF OBJECT_ID('tempdb..##temp_explosions_index') IS NOT NULL
 	   AND jump_broad IS NOT NULL
 	   AND bench_reps IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_explosions_index
@@ -1000,18 +826,12 @@ IF OBJECT_ID('tempdb..##temp_explosions_lower') IS NOT NULL
 	DROP TABLE ##temp_explosions_lower
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'ExplosionLower' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,MAX(jump_vertical) + 3.5*(MAX(jump_broad)/12)*(MAX([weight])/(MAX(height)/12))/3000 AS value
 	  INTO ##temp_explosions_lower
@@ -1021,13 +841,9 @@ IF OBJECT_ID('tempdb..##temp_explosions_lower') IS NOT NULL
 	   AND [weight] IS NOT NULL
 	   AND height IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_explosions_lower
@@ -1046,18 +862,12 @@ IF OBJECT_ID('tempdb..##temp_benches_work') IS NOT NULL
 	DROP TABLE ##temp_benches_work
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'BenchWorkJoules' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,((100*9.8)/(MAX(arm_length)*0.0254))*MAX(bench_reps) AS value
 	  INTO ##temp_benches_work
@@ -1065,13 +875,9 @@ IF OBJECT_ID('tempdb..##temp_benches_work') IS NOT NULL
 	 WHERE arm_length IS NOT NULL
 	   AND bench_reps IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_benches_work
@@ -1091,18 +897,12 @@ IF OBJECT_ID('tempdb..##temp_verticals_power') IS NOT NULL
 	DROP TABLE ##temp_verticals_power
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'JumpVertPower' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,(60.7*MAX(jump_vertical)*2.54) + (45.3*(MAX([weight])*0.453592)) - 2055  AS value
 	  INTO ##temp_verticals_power
@@ -1110,13 +910,9 @@ IF OBJECT_ID('tempdb..##temp_verticals_power') IS NOT NULL
 	 WHERE jump_vertical IS NOT NULL
 	   AND [weight] IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_verticals_power
@@ -1134,18 +930,12 @@ IF OBJECT_ID('tempdb..##temp_verticals_power_sandy') IS NOT NULL
 	DROP TABLE ##temp_verticals_power_sandy
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'JumpVertPowerSandy' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,8*MAX([weight])*SQRT(MAX(jump_vertical)/12) AS value
 	  INTO ##temp_verticals_power_sandy
@@ -1153,13 +943,9 @@ IF OBJECT_ID('tempdb..##temp_verticals_power_sandy') IS NOT NULL
 	 WHERE jump_vertical IS NOT NULL
 	   AND [weight] IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_verticals_power_sandy
@@ -1174,18 +960,12 @@ IF OBJECT_ID('tempdb..##temp_verticals_power_spags') IS NOT NULL
 	DROP TABLE ##temp_verticals_power_spags
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'JumpVertPowerSpags' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,SQRT(MAX([weight]))*SQRT(MAX(jump_vertical)) AS value
 	  INTO ##temp_verticals_power_spags
@@ -1193,13 +973,9 @@ IF OBJECT_ID('tempdb..##temp_verticals_power_spags') IS NOT NULL
 	 WHERE jump_vertical IS NOT NULL
 	   AND [weight] IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_verticals_power_spags
@@ -1217,18 +993,12 @@ IF OBJECT_ID('tempdb..##temp_broads_power_sandy') IS NOT NULL
 	DROP TABLE ##temp_broads_power_sandy
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'JumpBroadPowerSandy' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,4*SQRT(2)*MAX([weight])*SQRT(MAX(jump_broad)/12) AS value
 	  INTO ##temp_broads_power_sandy
@@ -1236,13 +1006,9 @@ IF OBJECT_ID('tempdb..##temp_broads_power_sandy') IS NOT NULL
 	 WHERE jump_broad IS NOT NULL
 	   AND [weight] IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_broads_power_sandy
@@ -1260,18 +1026,12 @@ IF OBJECT_ID('tempdb..##temp_jumps_combined') IS NOT NULL
 	DROP TABLE ##temp_jumps_combined
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'JumpCombined' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,(MAX(jump_vertical) + MAX(jump_broad))/2 AS value
 	  INTO ##temp_jumps_combined
@@ -1279,13 +1039,9 @@ IF OBJECT_ID('tempdb..##temp_jumps_combined') IS NOT NULL
 	 WHERE jump_broad IS NOT NULL
 	   AND jump_vertical IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_jumps_combined
@@ -1299,18 +1055,12 @@ IF OBJECT_ID('tempdb..##temp_lengths_vertical') IS NOT NULL
 	DROP TABLE ##temp_lengths_vertical
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'LengthVertical' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,MAX(height) + MAX(arm_length) AS value
 	  INTO ##temp_lengths_vertical
@@ -1318,13 +1068,9 @@ IF OBJECT_ID('tempdb..##temp_lengths_vertical') IS NOT NULL
 	 WHERE height IS NOT NULL
 	   AND arm_length IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_lengths_vertical
@@ -1338,18 +1084,12 @@ IF OBJECT_ID('tempdb..##temp_lengths_vertical_with_jump') IS NOT NULL
 	DROP TABLE ##temp_lengths_vertical_with_jump
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'LengthVerticalWithJump' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,MAX(height) + MAX(arm_length) + MAX(jump_vertical) AS value
 	  INTO ##temp_lengths_vertical_with_jump
@@ -1358,13 +1098,9 @@ IF OBJECT_ID('tempdb..##temp_lengths_vertical_with_jump') IS NOT NULL
 	   AND arm_length IS NOT NULL
 	   AND jump_vertical IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_lengths_vertical_with_jump
@@ -1378,18 +1114,12 @@ IF OBJECT_ID('tempdb..##temp_ratios_arm_to_height') IS NOT NULL
 	DROP TABLE ##temp_ratios_arm_to_height
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'RatioArmToHeight' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,MAX(arm_length)*2 / MAX(height) AS value
 	  INTO ##temp_ratios_arm_to_height
@@ -1397,13 +1127,9 @@ IF OBJECT_ID('tempdb..##temp_ratios_arm_to_height') IS NOT NULL
 	 WHERE height IS NOT NULL
 	   AND arm_length IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_ratios_arm_to_height
@@ -1417,18 +1143,12 @@ IF OBJECT_ID('tempdb..##temp_ratios_wing_to_height') IS NOT NULL
 	DROP TABLE ##temp_ratios_wing_to_height
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'RatioWingToHeight' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,MAX(wingspan) / MAX(height) AS value
 	  INTO ##temp_ratios_wing_to_height
@@ -1436,13 +1156,9 @@ IF OBJECT_ID('tempdb..##temp_ratios_wing_to_height') IS NOT NULL
 	 WHERE height IS NOT NULL
 	   AND wingspan IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_ratios_wing_to_height
@@ -1456,31 +1172,21 @@ IF OBJECT_ID('tempdb..##temp_radius_arms') IS NOT NULL
 	DROP TABLE ##temp_radius_arms
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'ArmRadius' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,POWER(MAX(arm_length),2) AS value
 	  INTO ##temp_radius_arms
       FROM ##temp_advanced_pivot
 	 WHERE arm_length IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_radius_arms
@@ -1494,18 +1200,12 @@ IF OBJECT_ID('tempdb..##temp_body_mass_indices') IS NOT NULL
 	DROP TABLE ##temp_body_mass_indices
 
     SELECT workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
 		  ,NULL AS measurable_type_id
 		  ,'BodyMassIndex' AS code
 		  ,MAX(reliability_id) AS reliability_id
-		  ,NULL AS reliability_description
-		  ,NULL AS translation
 		  ,1 AS attempt
 	      ,730*MAX([weight]) / MAX(height) AS value
 	  INTO ##temp_body_mass_indices
@@ -1513,13 +1213,9 @@ IF OBJECT_ID('tempdb..##temp_body_mass_indices') IS NOT NULL
 	 WHERE [weight] IS NOT NULL
 	   AND height IS NOT NULL
   GROUP BY workout_id
-	      ,workout_date
 		  ,workout_description
-		  ,workout_type
 		  ,workout_type_for_models
 	      ,player_id
-		  ,nfl_player_id
-		  ,college_player_id
   ORDER BY workout_id
   
 --SELECT * FROM ##temp_body_mass_indices
@@ -2070,7 +1766,6 @@ OUTPUT TABLES:
 IF OBJECT_ID('tempdb..##temp_measures_no_wgt') IS NOT NULL
 	DROP TABLE ##temp_measures_no_wgt
 
-
     SELECT player_id
 	      ,workout_id
 		  ,workout_type_for_models
@@ -2286,6 +1981,7 @@ IF OBJECT_ID('tempdb..##temp_measures_master_no_wgt') IS NOT NULL
 		  ,[HSpanCnv] AS hand_size
 		  ,[BroadJumpCnv] AS jump_broad
 		  ,[StrengthReps225] AS bench_reps
+		  ,[BenchWorkJoules] AS bench_work_joules
 		  ,[VertJumpCnv] AS jump_vertical
 		  ,[TestScore] AS test_score
 		  ,[Acceleration10] AS acceleration_ten
@@ -2336,9 +2032,6 @@ IF OBJECT_ID('tempdb..##temp_measures_master') IS NOT NULL
 
     SELECT nw.*
 	      ,Value AS [weight]
------------for below equation, 225 lbs = 100 kg , 9.8 m/s is the force of gravity, 0.0254 inches in a meter
- 		  ,((100*9.8)/(arm_length*0.0254))*bench_reps AS bench_work_joules         
------------divide the above by the time it takes him to do his reps to get bench_watts (not jj)
 	      ,CASE WHEN dbg.position != '' AND dbg.position IS NOT NULL THEN CASE WHEN dbg.position IN ('OB','RUSH','SAM','DP') THEN 'OB'
 																	           WHEN dbg.position IN ('DS','FS','SS') THEN 'DS'
 																			   ELSE UPPER(LTRIM(RTRIM(dbg.position)))
@@ -2368,14 +2061,6 @@ INNER JOIN [bane_production_analytics].[dbo].[players] pl
  LEFT JOIN ##temp_draft_board_positions_with_order dbg
         ON nw.player_id = dbg.player_id
 		AND dbg.draft_board_position_order = 1
-	 WHERE height IS NOT NULL
-	    OR arm_length IS NOT NULL
-		OR wingspan IS NOT NULL
-		OR hand_size IS NOT NULL
-		OR jump_broad IS NOT NULL
-		OR bench_reps IS NOT NULL
-		OR jump_vertical IS NOT NULL
-		OR test_score IS NOT NULL
   ORDER BY player_id, workout_id
 
  --SELECT * FROM ##temp_measures_master
@@ -2398,12 +2083,12 @@ IF OBJECT_ID('tempdb..##temp_meaures_with_z') IS NOT NULL
 		  ,(height - height_mean) / height_stdev AS height_z_score
 		  ,(ma.[weight] - weight_mean) / weight_stdev AS weight_z_score
 		  ,(arm_length - arm_length_mean) / arm_length_stdev AS arm_length_z_score
-		  ,(hand_size - hand_size_mean) / hand_size_stdev AS hand_size_z_score
 		  ,(wingspan - wingspan_mean) / wingspan_stdev AS wingspan_z_score
-		  ,(test_score - test_score_mean) / test_score_stdev AS test_score_z_score
-		  ,(bench_work_joules - bench_work_joules_mean) / bench_work_joules_stdev AS bench_work_joules_z_score
+		  ,(hand_size - hand_size_mean) / hand_size_stdev AS hand_size_z_score
 		  ,(jump_broad - jump_broad_mean) / jump_broad_stdev AS jump_broad_z_score
+		  ,(bench_work_joules - bench_work_joules_mean) / bench_work_joules_stdev AS bench_work_joules_z_score
 		  ,(jump_vertical - jump_vertical_mean) / jump_vertical_stdev AS jump_vertical_z_score
+		  ,(test_score - test_score_mean) / test_score_stdev AS test_score_z_score
 	  INTO ##temp_meaures_with_z
 	  FROM ##temp_measures_master ma
  LEFT JOIN ##temp_measures_avg_stdev_weight wt
@@ -2434,12 +2119,12 @@ IF OBJECT_ID('tempdb..##temp_measures_best_z') IS NOT NULL
 		  ,MAX(height_z_score) AS height_z_score_best
 	      ,MAX(weight_z_score) AS weight_z_score_best
 	      ,MAX(arm_length_z_score) AS arm_length_z_score_best
-	      ,MAX(hand_size_z_score) AS hand_size_z_score_best
 	      ,MAX(wingspan_z_score) AS wingspan_z_score_best
-		  ,MAX(test_score_z_score) AS test_score_z_score_best
-	      ,MAX(bench_work_joules_z_score) AS bench_work_joules_z_score_best
+	      ,MAX(hand_size_z_score) AS hand_size_z_score_best
 	      ,MAX(jump_broad_z_score) AS jump_broad_z_score_best
+	      ,MAX(bench_work_joules_z_score) AS bench_work_joules_z_score_best
 		  ,MAX(jump_vertical_z_score) AS jump_vertical_z_score_best
+		  ,MAX(test_score_z_score) AS test_score_z_score_best
 	  INTO ##temp_measures_best_z
 	  FROM ##temp_meaures_with_z
   GROUP BY player_id, workout_type_for_models
