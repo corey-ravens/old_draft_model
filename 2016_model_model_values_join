@@ -33,24 +33,36 @@ GROUP BY player_id
 SELECT DISTINCT goes_by
 	  ,last_name
 	  ,[code] AS college
-	  ,grade_draft_board
+	  ,grade_draft_board AS grade_draft_board_bin
+	  ,CASE WHEN grade_draft_board = '8.0' THEN 100
+	        WHEN grade_draft_board = '7.0' THEN 92
+			WHEN grade_draft_board = '6.9' THEN 82 
+			WHEN grade_draft_board IN ('6.7','6.5') THEN 71
+			WHEN grade_draft_board ='6.3' THEN 64 
+			WHEN grade_draft_board IN ('6.1','6.0') THEN 58
+			WHEN grade_draft_board = '5.9' THEN 53.5
+			WHEN grade_draft_board = '5.8' THEN 50
+			WHEN grade_draft_board = '5.6' THEN 47
+			WHEN grade_draft_board = '5.4' THEN 45
+			ELSE NULL	
+	   END AS grade_draft_board
+	  ,[grade_scaled] AS grade_college_model_raw
+	  ,([grade_scaled] - intercept) / coefficient AS grade_college_model_adjusted
+	  ,(([grade_scaled] - intercept) / coefficient)*1.05 AS grade_college_model_5pct
 	  ,CASE WHEN value_grades=0 OR value_measurables=0 THEN 2.0
-			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 96 THEN 8.0
-	        WHEN ([grade_scaled] + 3.34931)/0.99387 >= 90 THEN 7.0
-			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 78.5 THEN 6.9
-			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 67 THEN 6.7
-			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 62 THEN 6.3
-			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 55.5 THEN 6.1
-			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 52 THEN 5.9
-			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 48 THEN 5.8
-			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 46 THEN 5.7
-			WHEN [grade_scaled] IS NOT NULL THEN 5.7
-			--WHEN ([grade_scaled] + 9.04385)/1.12146 >= 43 THEN 5.6
-			--WHEN ([grade_scaled] + 19.96867)/1.29845 >= 42 THEN 5.4
-			--WHEN ([grade_scaled] + 19.96867)/1.29845 >= 40.5 THEN 5.2
-			--WHEN ([grade_scaled] + 19.96867)/1.29845 IS NOT NULL THEN 5.0
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 96 THEN 8.0
+	        WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 90 THEN 7.0
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 78.5 THEN 6.9
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 67 THEN 6.7
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 62 THEN 6.3
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 55.5 THEN 6.1
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 52 THEN 5.9
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 48 THEN 5.8
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 >= 46 THEN 5.7
+			WHEN (([grade_scaled] - intercept) / coefficient)*1.05 IS NOT NULL THEN 5.7
 			ELSE 2.0
-	   END AS grade_college_model_adjusted
+	   END AS grade_college_model_bin
+	   ,grade_scaled_mean AS grade_pro
 	  ,CASE WHEN [grade_scaled_mean] >= 93.5 THEN 8.0
 	        WHEN [grade_scaled_mean] >= 78.5 THEN 7.0
 			WHEN [grade_scaled_mean] >= 69 THEN 6.9 
@@ -64,15 +76,14 @@ SELECT DISTINCT goes_by
 			WHEN [grade_scaled_mean] >= 43.5 THEN 5.2
 			WHEN [grade_scaled_mean] IS NOT NULL THEN 5.0
 			ELSE 2.0
-	   END AS grade_pro_mean_first_4_seasons
-      ,[grade_scaled]
+	   END AS grade_pro_bin      
 	  ,COALESCE(dbg.draft_year,nfl_entry_year,pl.draft_year) as nfl_entry_year	  
-      ,[position_draft_board]
+      ,me.position
 	  ,value_grades
 	  ,value_production
 	  ,value_measurables
 	  ,me.[player_id]
-	  ,CASE WHEN [grade_scaled] >= 96 THEN 8.0
+	  /*,CASE WHEN [grade_scaled] >= 96 THEN 8.0
 	        WHEN [grade_scaled] >= 90 THEN 7.0
 			WHEN [grade_scaled] >= 78.5 THEN 6.9
 			WHEN [grade_scaled] >= 67 THEN 6.7
@@ -86,8 +97,8 @@ SELECT DISTINCT goes_by
 			WHEN [grade_scaled] >= 40.5 THEN 5.2
 			WHEN [grade_scaled] IS NOT NULL THEN 5.0
 			ELSE 2.0
-	   END AS grade_college_model
-  FROM [AnalyticsWork].[dbo].[draft2016_combined_model_output] me
+	   END AS grade_college_model*/
+  FROM [AnalyticsWork].[dbo].[draft2016__combined_model_output] me
 INNER JOIN [bane_production_analytics].[dbo].[players] pl
         ON me.player_id = pl.id
  LEFT JOIN [bane_production_analytics].[dbo].[positions] pos
@@ -99,4 +110,6 @@ INNER JOIN [bane_production_analytics].[dbo].[players] pl
         ON me.player_id = pg.player_id
  LEFT JOIN [bane_production_analytics].[dbo].[schools] sc
         ON pl.ncaa_club_id = sc.id
-	 WHERE grade_scaled = (SELECT MAX(grade_scaled) FROM [AnalyticsWork].[dbo].[draft2016_combined_model_output] me2 WHERE me2.player_id=me.player_id)
+ LEFT JOIN [AnalyticsWork].[dbo].[draft2016__model_grade_adjustment_factors] af
+        ON LTRIM(RTRIM(me.position)) = LTRIM(RTRIM(af.position_draft_board))
+	 WHERE grade_scaled = (SELECT MAX(grade_scaled) FROM [AnalyticsWork].[dbo].[draft2016__combined_model_output] me2 WHERE me2.player_id=me.player_id)
