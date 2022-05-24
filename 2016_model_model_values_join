@@ -30,13 +30,48 @@ GROUP BY player_id
 
 
 
-SELECT DISTINCT me.[player_id]
-	  ,goes_by
+SELECT DISTINCT goes_by
 	  ,last_name
-	  ,COALESCE(dbg.draft_year,nfl_entry_year,pl.draft_year) as nfl_entry_year
 	  ,[code] AS college
-      ,[position_draft_board]
+	  ,grade_draft_board
+	  ,CASE WHEN value_grades=0 OR value_measurables=0 THEN 2.0
+			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 96 THEN 8.0
+	        WHEN ([grade_scaled] + 3.34931)/0.99387 >= 90 THEN 7.0
+			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 78.5 THEN 6.9
+			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 67 THEN 6.7
+			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 62 THEN 6.3
+			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 55.5 THEN 6.1
+			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 52 THEN 5.9
+			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 48 THEN 5.8
+			WHEN ([grade_scaled] + 3.34931)/0.99387 >= 46 THEN 5.7
+			WHEN [grade_scaled] IS NOT NULL THEN 5.7
+			--WHEN ([grade_scaled] + 9.04385)/1.12146 >= 43 THEN 5.6
+			--WHEN ([grade_scaled] + 19.96867)/1.29845 >= 42 THEN 5.4
+			--WHEN ([grade_scaled] + 19.96867)/1.29845 >= 40.5 THEN 5.2
+			--WHEN ([grade_scaled] + 19.96867)/1.29845 IS NOT NULL THEN 5.0
+			ELSE 2.0
+	   END AS grade_college_model_adjusted
+	  ,CASE WHEN [grade_scaled_mean] >= 93.5 THEN 8.0
+	        WHEN [grade_scaled_mean] >= 78.5 THEN 7.0
+			WHEN [grade_scaled_mean] >= 69 THEN 6.9 
+			WHEN [grade_scaled_mean] >= 62 THEN 6.3
+			WHEN [grade_scaled_mean] >= 55 THEN 6.0 
+			WHEN [grade_scaled_mean] >= 51.5 THEN 5.9
+			WHEN [grade_scaled_mean] >= 48.5 THEN 5.8
+			WHEN [grade_scaled_mean] >= 46.5 THEN 5.7
+			WHEN [grade_scaled_mean] >= 45.5 THEN 5.6
+			WHEN [grade_scaled_mean] >= 44.5 THEN 5.4
+			WHEN [grade_scaled_mean] >= 43.5 THEN 5.2
+			WHEN [grade_scaled_mean] IS NOT NULL THEN 5.0
+			ELSE 2.0
+	   END AS grade_pro_mean_first_4_seasons
       ,[grade_scaled]
+	  ,COALESCE(dbg.draft_year,nfl_entry_year,pl.draft_year) as nfl_entry_year	  
+      ,[position_draft_board]
+	  ,value_grades
+	  ,value_production
+	  ,value_measurables
+	  ,me.[player_id]
 	  ,CASE WHEN [grade_scaled] >= 96 THEN 8.0
 	        WHEN [grade_scaled] >= 90 THEN 7.0
 			WHEN [grade_scaled] >= 78.5 THEN 6.9
@@ -52,24 +87,6 @@ SELECT DISTINCT me.[player_id]
 			WHEN [grade_scaled] IS NOT NULL THEN 5.0
 			ELSE 2.0
 	   END AS grade_college_model
-	  ,grade_draft_board
-	  ,CASE WHEN [grade_scaled_mean] >= 93.5 THEN 8.0
-	        WHEN [grade_scaled_mean] >= 78.5 THEN 7.0
-			WHEN [grade_scaled_mean] >= 69 THEN 6.9 
-			WHEN [grade_scaled_mean] >= 62 THEN 6.3
-			WHEN [grade_scaled_mean] >= 55 THEN 6.0 
-			WHEN [grade_scaled_mean] >= 51.5 THEN 5.9
-			WHEN [grade_scaled_mean] >= 48.5 THEN 5.8
-			WHEN [grade_scaled_mean] >= 46.5 THEN 5.7
-			WHEN [grade_scaled_mean] >= 45.5 THEN 5.6
-			WHEN [grade_scaled_mean] >= 44.5 THEN 5.4
-			WHEN [grade_scaled_mean] >= 43.5 THEN 5.2
-			WHEN [grade_scaled_mean] IS NOT NULL THEN 5.0
-			ELSE 2.0
-	   END AS grade_pro_mean_first_4_seasons
-	  ,value_grades
-	  ,value_production
-	  ,value_measurables
   FROM [AnalyticsWork].[dbo].[draft2016_combined_model_output] me
 INNER JOIN [bane_production_analytics].[dbo].[players] pl
         ON me.player_id = pl.id
