@@ -7,6 +7,7 @@ This is the code for creating the pre combine measurables data tables.  It's rea
 and weight AND 40 time because that is all you have at that point.
 
 v2 changes to take weight that goes along with the best 40 time.
+v3 adds in slot WR and CB and salary for injured players
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -27,8 +28,8 @@ OUTPUT TABLES:
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-DECLARE @current_season INT
-SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+DECLARE @iSeason INT
+SELECT @iSeason = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
 
 -- Check if #temp_measurables exists, if it does drop it
 IF OBJECT_ID('tempdb..#temp_measurables') IS NOT NULL
@@ -37,10 +38,10 @@ IF OBJECT_ID('tempdb..#temp_measurables') IS NOT NULL
 	SELECT wo.id AS workout_id
 		,wo.[description] AS workout_description
 		,wo.player_id AS bane_player_id
-		,CASE WHEN nfl_entry_year <= @current_season THEN nfl_entry_year
-			WHEN nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
+		,CASE WHEN draft_year <= @iSeason THEN draft_year
+			WHEN draft_year IN (@iSeason + 1,@iSeason + 2) THEN @iSeason + 1
 			ELSE NULL
-		END AS nfl_entry_year
+		END AS draft_year
 		,CASE WHEN mt.code = 'Hgt' THEN 'height' 
 			WHEN mt.code = 'Wgt' THEN 'weight'
 			WHEN mt.code = '40YTime' THEN 'forty_time'
@@ -75,19 +76,19 @@ IF OBJECT_ID('tempdb..#temp_measurables') IS NOT NULL
 		AND (wo.is_deleted = 0 OR (wo.is_deleted = 1 AND wo.[description] LIKE 'NCAA Scouting%'))
 		AND re.code IN ('V','W','X','B','P','E')
 		AND (MONTH(wo.[date]) IN (6,7,8,9,10,11,12,1) OR (MONTH(wo.[date]) = 2 AND DAY(wo.[date]) < 16) OR (MONTH(wo.[date]) = 5 AND DAY(wo.[date]) > 16))
-		AND (pl.nfl_id IS NOT NULL OR nfl_entry_year >= @current_season)
-		AND nfl_entry_year >= 2005
-		AND nfl_entry_year <= @current_season + 2
+		AND (pl.nfl_id IS NOT NULL OR draft_year >= @iSeason)
+		AND draft_year >= 2005
+		AND draft_year <= @iSeason + 2
 		AND ((mt.code = 'Hgt' AND value BETWEEN 5000 AND 7060)
 		OR (mt.code = 'Wgt' AND value BETWEEN 100 AND 450)
-		OR (mt.code = '40YTime' AND value BETWEEN 4.00 AND 7.00))
+		OR (mt.code = '40YTime' AND value BETWEEN 4.19 AND 7.00))
 
 
 /*
 SELECT *
 FROM #temp_measurables
-WHERE bane_player_id = 76347
-ORDER BY workout_id, measurable_type, priority
+WHERE bane_player_id = 35384
+ORDER BY measurable_type, priority
 */
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -106,7 +107,7 @@ IF OBJECT_ID('tempdb..#temp_bad_weights_removed') IS NOT NULL
     SELECT m1.workout_id
 		,m1.workout_description
 		,m1.bane_player_id
-		,m1.nfl_entry_year
+		,m1.draft_year
 		,m1.measurable_type
 		,m1.workout_code
 		,m1.[priority]
@@ -127,7 +128,7 @@ IF OBJECT_ID('tempdb..#temp_bad_weights_removed') IS NOT NULL
 /*
 SELECT *
 FROM #temp_bad_weights_removed
-WHERE nfl_entry_year = 2015
+WHERE draft_year = 2015
 */
 
 
@@ -154,7 +155,7 @@ IF OBJECT_ID('tempdb..#temp_measurables_to_model') IS NOT NULL
 /*
 SELECT *
 FROM #temp_measurables_to_model
-WHERE nfl_entry_year = 2015
+WHERE draft_year = 2015
 */
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -191,6 +192,116 @@ WHERE bane_player_id = 76347
 
 /*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Find the average age by eligibility to fill in missing ages for the current draft year.
+
+OUTPUT TABLES:
+#temp_average_ages
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_average_ages exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_average_ages') IS NOT NULL
+	DROP TABLE #temp_average_ages
+
+	SELECT draft_year
+		,eligibility
+		,AVG(DATEDIFF(DD,(birth_date),CONCAT('04/01/',@iSeason + 1)) / 365.2425 ) AS average_age
+	INTO #temp_average_ages
+	FROM BaneProductionAnalytics.dbo.players
+	WHERE draft_year = @iSeason + 1
+	GROUP BY draft_year
+		,eligibility
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Find the salary value for injured players
+
+OUTPUT TABLES:
+#temp_average_ages
+#temp_injured_salaries_one_row
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_injured_salaries exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_injured_salaries') IS NOT NULL
+	DROP TABLE #temp_injured_salaries
+
+	SELECT PlayerID AS nfl_player_id
+		,MAX([SalaryFit]) AS salaries
+	INTO #temp_injured_salaries
+	FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r1
+	WHERE report_week = 17
+		AND report_season = 2017
+		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_defense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 17 AND r2.report_season = 2017)
+	GROUP BY PlayerID
+
+
+	INSERT INTO #temp_injured_salaries
+	SELECT PlayerID AS nfl_player_id
+		,MAX([SalaryFit]) AS salaries
+	FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r1
+	WHERE report_week = 17
+		AND report_season = 2017
+		AND Season = (SELECT MAX(season) FROM [AnalyticsWork].[dbo].[rd1_players_offense_3] r2 WHERE r2.PlayerID = r1.PlayerID AND r2.report_week = 17 AND r2.report_season = 2017)
+	GROUP BY PlayerID
+
+
+-- Check if #temp_injured_salaries_one_row exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_injured_salaries_one_row') IS NOT NULL
+	DROP TABLE #temp_injured_salaries_one_row
+
+	SELECT nfl_player_id
+		,MAX(salaries) AS salaries
+	INTO #temp_injured_salaries_one_row
+	FROM #temp_injured_salaries
+	GROUP BY nfl_player_id
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Add bane_player_id to the season position tables
+
+OUTPUT TABLES:
+#temp_season_position_offense
+#temp_season_position_defense
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_season_position_offense exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_season_position_offense') IS NOT NULL
+	DROP TABLE #temp_season_position_offense
+
+	SELECT nfl_player_id
+		,pl.id AS bane_player_id
+		,season
+		,receiver_type
+	INTO #temp_season_position_offense
+	FROM Analytics.dbo.analysis_players_season_position_offense po
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON po.nfl_player_id = pl.nfl_id
+		AND pl.is_deleted = 0
+	WHERE season_type_adjusted = 'REGPOST'
+
+-- Check if #temp_season_position_defense exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_season_position_defense') IS NOT NULL
+	DROP TABLE #temp_season_position_defense
+
+	SELECT nfl_player_id
+		,pl.id AS bane_player_id
+		,season
+		,position_blt AS position_defense
+	INTO #temp_season_position_defense
+	FROM Analytics.dbo.analysis_players_season_position_defense pd
+	INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON pd.nfl_player_id = pl.nfl_id
+		AND pl.is_deleted = 0
+	WHERE season_type_adjusted = 'REGPOST'
+		AND defense_type = 'ALL'
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 Join his measurable summary 40 time and position graded as to the pivoted measurables table.
 
 OUTPUT TABLES:
@@ -203,33 +314,36 @@ TRUNCATE TABLE Analytics.dbo.work_r_input_pre_combine_measurables
 INSERT INTO Analytics.dbo.work_r_input_pre_combine_measurables
 	SELECT mp.bane_player_id
 		,CONCAT(pl.last_name,', ',pl.goes_by) AS player
-		,CASE WHEN pl.nfl_entry_year <= @current_season THEN pl.nfl_entry_year
-			WHEN pl.nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
+		,CASE WHEN pl.draft_year <= @iSeason THEN pl.draft_year
+			WHEN pl.draft_year IN (@iSeason + 1,@iSeason + 2) THEN @iSeason + 1
 			ELSE NULL
-		END AS nfl_entry_year
-		,CASE WHEN pl.nfl_entry_year <= @current_season THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',pl.nfl_entry_year)) / 365.2425 
-			WHEN pl.nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',@current_season + 1)) / 365.2425 
+		END AS draft_year
+		,CASE WHEN pl.draft_year <= @iSeason THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',pl.draft_year)) / 365.2425 
+			WHEN pl.draft_year IN (@iSeason + 1,@iSeason + 2) THEN ISNULL(DATEDIFF(DD,(birth_date),CONCAT('04/01/',@iSeason + 1)) / 365.2425,average_age) 
 			ELSE NULL
 		END AS age_at_draft
-		,CASE WHEN COALESCE(pg.position,pn.translation) = 'OH' THEN 8
-			WHEN pg.position IS NULL AND pn.abbreviation = 'DE43' THEN 45
-			ELSE COALESCE(pg.position_id,pl.position_id)
-		END AS position_id 
 		,CASE WHEN COALESCE(pg.position,pn.translation) = 'OH' THEN 'RB'
-			WHEN pg.position IS NULL AND pn.abbreviation = 'DE43' THEN 'OB'
+			WHEN pg.position = 'DE' AND (pn.abbreviation = 'DE43' OR position_defense = 'DE43') THEN 'OB'
+			WHEN COALESCE(pg.position,pn.translation) = 'DC' AND position_defense = 'NB' THEN 'DC_SLOT'
+			WHEN COALESCE(pg.position,pn.translation) = 'WR' AND receiver_type = 'SLOT' THEN 'WR_SLOT'
 			ELSE COALESCE(pg.position,pn.translation)
-		END AS position 
+		END AS position
 		,mp.[weight]
 		,mp.height
 		,mp.forty_time
 		,speed AS actual_forty_time
-		,CASE WHEN pl.nfl_entry_year > @current_season THEN NULL ELSE COALESCE(CAST(salaries AS FLOAT),0) END AS pct_of_cap
-		,season
-		,CASE WHEN pl.nfl_entry_year > @current_season THEN 1 ELSE season_in_league END AS season_in_league
-		,CASE WHEN pl.nfl_entry_year > @current_season THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
+		,CASE WHEN pl.draft_year > @iSeason OR sal.salaries IN ('Pre-2011') THEN NULL 
+			ELSE CASE WHEN sal.salaries IN ('Injured') THEN ins.salaries
+					ELSE ISNULL(CAST(sal.salaries AS FLOAT),0) 
+				END 
+		END AS pct_of_cap
+		,pg.season
+		,CASE WHEN pl.draft_year > @iSeason THEN 1 ELSE season_in_league END AS season_in_league
+		,CASE WHEN pl.draft_year > @iSeason THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
 	FROM #temp_measurables_pivot mp
 	INNER JOIN BaneProductionAnalytics.dbo.players pl
 		ON mp.bane_player_id = pl.id
+		AND pl.is_deleted = 0
 	LEFT JOIN BaneProductionAnalytics.dbo.positions pn
 		ON pl.position_id = pn.id  
 	LEFT JOIN BaneProductionAnalytics.dbo.measurable_summaries ms
@@ -239,5 +353,16 @@ INSERT INTO Analytics.dbo.work_r_input_pre_combine_measurables
 		AND sal.salaries NOT IN ('Injured','Pre-2011')
 	LEFT JOIN Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
 		ON mp.bane_player_id = pg.bane_player_id
-
-
+	LEFT JOIN #temp_average_ages aa
+		ON pl.draft_year = aa.draft_year
+		AND pl.eligibility = aa.eligibility
+	LEFT JOIN #temp_injured_salaries_one_row ins
+		ON pl.nfl_id = ins.nfl_player_id
+	LEFT JOIN #temp_season_position_offense poff
+		ON pg.bane_player_id = poff.bane_player_id
+		AND pg.season = poff.season
+	LEFT JOIN #temp_season_position_defense pdef
+		ON pg.bane_player_id = pdef.bane_player_id
+		AND pg.season = pdef.season
+	WHERE pl.draft_year <= @iSeason
+		OR (pl.draft_year IN (@iSeason + 1,@iSeason + 2) AND pg.season IS NULL)
