@@ -1,42 +1,190 @@
-
+  
 /*---------------------------------------------------------------------
 
-Here you are finding out if a player has measurables from a workout or 
-pro day, as we want to prioritize those measurables over all others for
-our models.
+Create a record for each player workout - take the best values for each
+individual measurable (min or max, electronic or not) depending on 
+what workout it is.
 
 ----------------------------------------------------------------------*/
 
--- Check if temp_workouts_and_measurables exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_combine_or_pro_day') IS NOT NULL
-	DROP TABLE ##temp_combine_or_pro_day
+-- Check if temp_workouts exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_workouts') IS NOT NULL
+	DROP TABLE ##temp_workouts
 
-    SELECT [player_id]
-		  ,workouts.[id] as workout_id
-		  ,CASE WHEN MIN([priority]) IN (1,2) THEN 1 ELSE 0 END AS combine_or_pro_day
-      INTO ##temp_combine_or_pro_day
+    SELECT workouts.[id] as workout_id
+	      ,[player_id]
+		  ,[priority]
+		  ,COALESCE(electronic_forty,handheld_forty) as [forty_time]
+		  ,COALESCE(electronic_twenty,handheld_twenty) as [twenty_time]
+		  ,COALESCE(electronic_ten,handheld_ten) as [ten_time]
+		  ,[height]
+		  ,[weight]
+		  ,[arm_length]
+		  ,[wing_span]
+		  ,[hand_span]
+		  ,[vertical_jump]
+		  ,[broad_jump]
+		  ,[short_shuttle]
+		  ,[long_shuttle]
+		  ,[three_cone]
+		  ,[bench_reps]
+		  ,[test_score]
+	  INTO ##temp_workouts
       FROM [bane-development].[dbo].[workouts] workouts
 INNER JOIN [bane-development].[dbo].[player_workout_types] workout_types
-        ON workouts.player_workout_type_id=workout_types.id 
-  GROUP BY [player_id], workouts.[id]
-  
+        ON workouts.player_workout_type_id=workout_types.id
+--JOIN TO THE MIN ELECTRONIC 40 TIME
+ LEFT JOIN (SELECT workout_id 
+				  ,MIN([value]) AS electronic_forty
+			 FROM [bane-development].[dbo].[measurables]
+			WHERE measurable_type_id=78
+			  AND order_by IN (5,6)
+		 GROUP BY workout_id) AS electronic_forty
+		 ON workouts.id=electronic_forty.workout_id
+--JOIN TO THE MIN HANDHELD 40 TIME
+ LEFT JOIN (SELECT workout_id 
+				   ,MIN([value]) AS handheld_forty
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=78
+			   AND order_by < 5
+		  GROUP BY workout_id) AS handheld_forty
+		 ON workouts.id=handheld_forty.workout_id
+--JOIN TO THE MIN ELECTRONIC 20 TIME
+ LEFT JOIN (SELECT workout_id 
+				  ,MIN([value]) AS electronic_twenty
+			 FROM [bane-development].[dbo].[measurables]
+			WHERE measurable_type_id=79
+			  AND order_by IN (5,6)
+		 GROUP BY workout_id) AS electronic_twenty
+		 ON workouts.id=electronic_twenty.workout_id
+--JOIN TO THE MIN HANDHELD 20 TIME
+ LEFT JOIN (SELECT workout_id 
+				   ,MIN([value]) AS handheld_twenty
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=79
+			   AND order_by < 5
+		  GROUP BY workout_id) AS handheld_twenty
+		 ON workouts.id=handheld_twenty.workout_id
+--JOIN TO THE MIN ELECTRONIC 10 TIME
+ LEFT JOIN (SELECT workout_id 
+				  ,MIN([value]) AS electronic_ten
+			 FROM [bane-development].[dbo].[measurables]
+			WHERE measurable_type_id=80
+			  AND order_by IN (5,6)
+		 GROUP BY workout_id) AS electronic_ten
+		 ON workouts.id=electronic_ten.workout_id
+--JOIN TO THE MIN HANDHELD 10 TIME
+ LEFT JOIN (SELECT workout_id 
+				   ,MIN([value]) AS handheld_ten
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=80
+			   AND order_by < 5
+		  GROUP BY workout_id) AS handheld_ten
+		 ON workouts.id=handheld_ten.workout_id
+--JOIN TO THE MAX HEIGHT
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS height
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=70
+		  GROUP BY workout_id) AS height
+		 ON workouts.id=height.workout_id
+--JOIN TO THE MAX WEIGHT
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS [weight]
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=71
+		  GROUP BY workout_id) AS [weight]
+		 ON workouts.id=[weight].workout_id
+--JOIN TO THE MAX ARM LENGTH
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS arm_length
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=73
+		  GROUP BY workout_id) AS arm_length
+		 ON workouts.id=arm_length.workout_id
+--JOIN TO THE MAX WINGSPAN
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS wing_span
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=75
+		  GROUP BY workout_id) AS wing_span
+		 ON workouts.id=wing_span.workout_id
+--JOIN TO THE MAX HANDSPAN
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS hand_span
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=77
+		  GROUP BY workout_id) AS hand_span
+		 ON workouts.id=hand_span.workout_id
+--JOIN TO THE MAX VERTICAL JUMP
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS vertical_jump
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=135
+		  GROUP BY workout_id) AS vertical_jump
+		 ON workouts.id=vertical_jump.workout_id
+--JOIN TO THE MAX BROAD JUMP
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS broad_jump
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=83
+		  GROUP BY workout_id) AS broad_jump
+		 ON workouts.id=broad_jump.workout_id
+--JOIN TO THE MIN SHORT SHUTTLE
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS short_shuttle
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=84
+		  GROUP BY workout_id) AS short_shuttle
+		 ON workouts.id=short_shuttle.workout_id
+--JOIN TO THE MIN LONG SHUTTLE
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS long_shuttle
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=86
+		  GROUP BY workout_id) AS long_shuttle
+		 ON workouts.id=long_shuttle.workout_id
+--JOIN TO THE MIN THREE CONE
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS three_cone
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=85
+		  GROUP BY workout_id) AS three_cone
+		 ON workouts.id=three_cone.workout_id
+--JOIN TO THE MAX BENCH PRESS
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS bench_reps
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=87
+		  GROUP BY workout_id) AS bench_reps
+		 ON workouts.id=bench_reps.workout_id
+--JOIN TO THE MAX TEST SCORE
+ LEFT JOIN (SELECT workout_id 
+				   ,MAX([value]) AS test_score
+			  FROM [bane-development].[dbo].[measurables]
+			 WHERE measurable_type_id=133
+		  GROUP BY workout_id) AS test_score
+		 ON workouts.id=test_score.workout_id
+
 
 /*---------------------------------------------------------------------
 
-Next you join players, workouts, and measurables to have all the needed
-data in one place.  While doing this, you assign all the different NFL 
-position IDs into groups that match as closely as possible to our Draft 
-Board positions.  
+Next you join player information to the workouts.  While doing this, 
+you assign all the different NFL position IDs into groups that match as 
+closely as possible to our Draft Board positions.  
 
 ----------------------------------------------------------------------*/
 
--- Check if temp_workouts_and_measurables exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_workouts_and_measurables') IS NOT NULL
-	DROP TABLE ##temp_workouts_and_measurables
+-- Check if temp_player_workouts exists, if it does drop it
+IF OBJECT_ID('tempdb..##temp_player_workouts') IS NOT NULL
+	DROP TABLE ##temp_player_workouts
 
-    SELECT workouts.[player_id]
-	      ,players.[first_name]
+    SELECT players.[first_name]
 		  ,players.[last_name]
+		  ,players.[draft_year]
+		  ,players.[nfl_id] AS player_id_nfl
+		  ,workouts.*
+		  ,CASE WHEN [priority] IN (1,2) THEN 1 ELSE 0 END AS combine_or_pro_day
 		  ,CASE WHEN [position] IS NOT NULL THEN CASE WHEN [position] IN ('FS','SS') THEN 'DS' 
 													  WHEN [position] IN ('RUSH','SAM') THEN 'OB34'
 													  ELSE [position]
@@ -60,102 +208,21 @@ IF OBJECT_ID('tempdb..##temp_workouts_and_measurables') IS NOT NULL
 						  WHEN [position_id] = 23 THEN 'PK'
 						  END
 				END AS [position] 
-		  ,players.[draft_year]
 		  ,[grade_college]
 		  ,[grade_pro_yr1]
 		  ,[grade_pro_yr2]
 		  ,[grade_pro_yr3]
 		  ,[grade_pro_yr4]
-		  ,workouts.[id] AS workout_id
-		  ,[priority]
-		  ,COALESCE([combine_or_pro_day],0) AS combine_or_pro_day
-		  ,[measurable_type_id]
-		  ,[code]
-          ,[value]
-      INTO ##temp_workouts_and_measurables
-      FROM [bane-development].[dbo].[workouts] workouts
-INNER JOIN [bane-development].[dbo].[player_workout_types] workout_types
-        ON workouts.player_workout_type_id=workout_types.id 
-INNER JOIN [bane-development].[dbo].[measurables] measurables
-        ON measurables.workout_id=workouts.id
-INNER JOIN [bane-development].[dbo].[measurable_types] measurable_types
-        ON measurables.measurable_type_id=measurable_types.id
+      INTO ##temp_player_workouts
+      FROM ##temp_workouts workouts
 INNER JOIN [bane-development].[dbo].[players] players
         ON players.id=workouts.player_id
- LEFT JOIN ##temp_combine_or_pro_day combpro
-		ON workouts.player_id=combpro.player_id
-	   AND workouts.id=combpro.workout_id
- LEFT JOIN [AnalyticsWork].[dbo].[grades_and_positions_from_sas] grades
+ LEFT JOIN [AnalyticsWork].[dbo].[sas_grades_and_positions] grades
 		ON players.nfl_id=grades.player_id_nfl
- LEFT JOIN [AnalyticsWork].[dbo].[corey_positions] corey_pos
-		ON grades.position_id_sas=corey_pos.position_id_draft_board
-     WHERE workout_types.[priority] < 11
-	   AND [entry_year]=2015
-
-
-/*---------------------------------------------------------------------
-
-Next you pivot the measurables so you have one row for every workout 
-that contains all measurables for that workout 
-
-----------------------------------------------------------------------*/
-
--- Check if temp_workouts_and_measurables_pivot exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_workouts_and_measurables_pivot') IS NOT NULL
-	DROP TABLE ##temp_workouts_and_measurables_pivot
-
-    SELECT [position]
-		  ,[player_id]
-		  ,[first_name]
-		  ,[last_name]
-		  ,[draft_year]
-		  ,[grade_college]
-		  ,[grade_pro_yr1]
-		  ,[grade_pro_yr2]
-		  ,[grade_pro_yr3]
-		  ,[grade_pro_yr4]
-		  ,[workout_id]
-		  ,[priority]
-		  ,[combine_or_pro_day]
-	      ,HgtCnv AS height_converted
-	      ,Wgt AS weight
-	      ,ArmLngCnv AS arm_length_converted
-	      ,WSpanCnv AS wing_span_converted
-	      ,HSpanCnv AS hand_span_converted
-	      ,[40YTime] AS forty_time
-	      ,[20YTime] AS twenty_time
-	      ,[10YTime] AS ten_time
-	      ,VertJumpCnv AS vertical_jump_converted
-	      ,BroadJumpCnv AS broad_jump_converted
-	      ,[20YShuttle] AS short_shuttle
-	      ,[3Cone] AS three_cone
-	      ,[60YShuttle] AS long_shuttle
-	      ,StrengthReps225 AS bench_reps
-	  INTO ##temp_workouts_and_measurables_pivot
-      FROM (
-    SELECT [position]
-		  ,[player_id]
-		  ,[first_name]
-		  ,[last_name]
-		  ,[draft_year]
-		  ,[grade_college]
-		  ,[grade_pro_yr1]
-		  ,[grade_pro_yr2]
-		  ,[grade_pro_yr3]
-		  ,[grade_pro_yr4]
-		  ,[workout_id]
-		  ,[priority]
-		  ,[combine_or_pro_day]
-		  ,[code]
-		  ,[value]
-      FROM ##temp_workouts_and_measurables) up
-     PIVOT (MAX(value) FOR [code] IN (HgtCnv, Wgt, ArmLngCnv, WSpanCnv, HSpanCnv, [40YTime], [20YTime], [10YTime], VertJumpCnv, BroadJumpCnv, [20YShuttle], [3Cone], [60YShuttle], StrengthReps225)) AS pvt
-  ORDER BY [position]
-		  ,[player_id]
-		  ,[first_name]
-		  ,[last_name]
-		  ,[draft_year]
-		  ,[workout_id]
+ LEFT JOIN [AnalyticsWork].[dbo].[sas_positions] sas_pos
+		ON grades.position_id_sas=sas_pos.position_id_draft_board
+     WHERE [priority] <= 10
+	   AND [entry_year] >= 2005
 
 
 /*---------------------------------------------------------------------
@@ -236,20 +303,20 @@ IF OBJECT_ID('tempdb..##temp_forty_analysis_dataset') IS NOT NULL
 		  ,[workout_id]
 		  ,[priority]
 		  ,[combine_or_pro_day]
-		  ,[height_converted] AS height
-		  ,POWER([height_converted],2) AS height_squared
+		  ,[height] AS height
+		  ,POWER([height],2) AS height_squared
 		  ,[weight]
 		  ,POWER([weight],2) AS weight_squared
-		  ,[arm_length_converted] AS arm_length
-		  ,POWER([arm_length_converted],2) AS arm_length_squared
+		  ,[arm_length] AS arm_length
+		  ,POWER([arm_length],2) AS arm_length_squared
 		  ,[forty_time]
 	  --INTO ##temp_forty_analysis_dataset
-      FROM ##temp_workouts_and_measurables_pivot workout1
+      FROM ##temp_player_workouts workout1
 	 WHERE [forty_time] = (SELECT MIN([forty_time])
-							 FROM ##temp_workouts_and_measurables_pivot workout2 
+							 FROM ##temp_player_workouts workout2 
 							WHERE workout1.[player_id]=workout2.[player_id]
 							  AND workout2.combine_or_pro_day=(SELECT MAX([combine_or_pro_day])
-																 FROM ##temp_workouts_and_measurables_pivot workout3
+																 FROM ##temp_player_workouts workout3
 																WHERE workout2.[player_id]=workout3.[player_id]
 																  AND forty_time IS NOT NULL
 															 GROUP BY workout3.[player_id])
@@ -258,25 +325,6 @@ IF OBJECT_ID('tempdb..##temp_forty_analysis_dataset') IS NOT NULL
   ORDER BY [position]
 
 
-/*---------------------------------------------------------------------
-
-Separate out the full 40 analysis dataset into training, validation, 
-and scoring datasets.
-
-----------------------------------------------------------------------*/
-/*
-	SELECT *
-	  FROM ##temp_forty_analysis_dataset
-	 WHERE random_number <= 6
-
-    SELECT *
-	  FROM ##temp_forty_analysis_dataset
-	 WHERE random_number IN (7,8)
-
-    SELECT *
-	  FROM ##temp_forty_analysis_dataset
-	 WHERE random_number = 9
-*/
 
 /*---------------------------------------------------------------------
 
@@ -290,68 +338,3 @@ want to just create a "best of" record, you want to know the size of a
 player when he ran that specific time.
 
 ----------------------------------------------------------------------*/
-
--- Check if temp_twenty_analysis_dataset exists, if it does drop it
-IF OBJECT_ID('tempdb..##temp_twenty_analysis_dataset') IS NOT NULL
-	DROP TABLE ##temp_twenty_analysis_dataset
-
-    SELECT [position]
-		  ,[player_id]
-		  ,[first_name]
-		  ,[last_name]
-	      ,CASE WHEN [draft_year]=2015 THEN 9 ELSE Abs(Checksum(NewId())) % 9 END AS random_number
-		  ,[draft_year]
-		  ,CASE WHEN [grade_pro] = 8 THEN 50
-		        WHEN [grade_pro] = 7 THEN 20
-				WHEN [grade_pro] = 6.9 THEN 10
-				WHEN [grade_pro] = 6.7 THEN 7.69
-				WHEN [grade_pro] = 6.5 THEN 6.25
-				WHEN [grade_pro] = 6.3 THEN 5
-				WHEN [grade_pro] = 6.1 THEN 2.5
-				WHEN [grade_pro] = 6.0 THEN 3.33
-				WHEN [grade_pro] = 5.9 THEN 1.82
-				WHEN [grade_pro] = 5.8 THEN 1.33
-				WHEN [grade_pro] = 5.7 THEN 1.11
-				ELSE 0
-			END AS [grade_pro]
-		  ,[workout_id]
-		  ,[priority]
-		  ,[combine_or_pro_day]
-		  ,[height_converted] AS height
-		  ,POWER([height_converted],2) AS height_squared
-		  ,[weight]
-		  ,POWER([weight],2) AS weight_squared
-		  ,[arm_length_converted] AS arm_length
-		  ,POWER([weight],2) AS arm_length_squared
-		  ,[twenty_time]
-	  --INTO ##temp_twenty_analysis_dataset
-      FROM ##temp_workouts_and_measurables_pivot workout1
-	 WHERE [twenty_time] = (SELECT MIN([twenty_time])
-							 FROM ##temp_workouts_and_measurables_pivot workout2 
-							WHERE workout1.[player_id]=workout2.[player_id]
-							  AND workout2.combine_or_pro_day=(SELECT MAX([combine_or_pro_day])
-																 FROM ##temp_workouts_and_measurables_pivot workout3
-																WHERE workout2.[player_id]=workout3.[player_id]
-															 GROUP BY workout3.[player_id])
-						 GROUP BY workout2.player_id)
-	  AND [position] NOT IN ('LS','PT','PK')
-  ORDER BY [position]
-
-  /*---------------------------------------------------------------------
-
-Separate out the full 20 analysis dataset into training, validation, 
-and scoring datasets.
-
-----------------------------------------------------------------------*/
-
-	SELECT *
-	  FROM ##temp_twenty_analysis_dataset
-	 WHERE random_number <= 6
-
-    SELECT *
-	  FROM ##temp_twenty_analysis_dataset
-	 WHERE random_number IN (7,8)
-
-    SELECT *
-	  FROM ##temp_twenty_analysis_dataset
-	 WHERE random_number = 9
