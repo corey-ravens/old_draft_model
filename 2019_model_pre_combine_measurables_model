@@ -1,0 +1,211 @@
+
+
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+This is the code for creating the pre combine measurables data tables.  It's really only height
+and weight AND 40 time because that is all you have at that point.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create the master measurables table.
+
+Only use school provided, borrowed, or scout estimated values from August through January. This is a 
+preliminary / first step model for running when all you have is estimated values, so the values used
+to build the models in the past need to be of the same type.
+
+BUT, when doing similar players analysis, you want to use the best measurable data you have for previous
+classes, even if it is from later in the process.  That's the reason for the two different commented
+WHERE clause parts. Depending on which analysis youre doing, you can switch between them.
+
+OUTPUT TABLES:
+#temp_measurables
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+DECLARE @current_season INT
+SELECT @current_season = (SELECT MAX(season) FROM Analytics.dbo.map_nfl_league_year_dates WHERE GETDATE() >= regular_season_start)
+
+-- Check if #temp_measurables exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_measurables') IS NOT NULL
+	DROP TABLE #temp_measurables
+
+    SELECT wo.id AS workout_id
+		  ,wo.[description] AS workout_description
+	      ,wo.player_id AS bane_player_id
+		  /*,CASE WHEN nfl_entry_year <= @current_season THEN nfl_entry_year
+				WHEN nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
+				ELSE NULL
+		   END AS nfl_entry_year
+		  ,CASE WHEN nfl_entry_year <= @current_season THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',nfl_entry_year)) / 365.2425 
+				WHEN nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',@current_season + 1)) / 365.2425 
+				ELSE NULL
+		   END AS age_at_draft*/
+		  ,CASE WHEN mt.code = 'Hgt' THEN 'height' 
+				WHEN mt.code = 'Wgt' THEN 'weight'
+				WHEN mt.code = '40YTime' THEN 'forty_time'
+		   END AS measurable_type
+		  ,re.code AS workout_code
+		  ,re.[priority]
+		  ,wt.[type]
+		  ,CASE WHEN mt.code IN ('Hgt','Wgt') THEN RANK() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority], me.value DESC)
+				WHEN mt.code IN ('40YTime') THEN RANK() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority], me.value)
+				ELSE NULL
+		   END AS measurable_order_overall
+		  ,RANK() OVER (PARTITION BY wo.player_id, me.measurable_type_id ORDER BY re.[priority]) AS measurable_order_by_priority
+		  ,CASE WHEN mt.code IN ('Hgt') THEN CAST(LEFT(me.value,1) AS NUMERIC(1,0)) * 12 + CAST(RIGHT(LEFT(me.value,3),2) AS NUMERIC(2,0)) + CAST(RIGHT(LEFT(me.value,4),1) AS NUMERIC(1,0)) * 0.125
+				ELSE me.value 
+		   END AS value
+		   ,wo.[date] AS workout_date
+	  INTO #temp_measurables
+      FROM [BaneProductionAnalytics].[dbo].[workouts] wo
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[measurables] me
+        ON wo.id = me.workout_id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[measurable_types] mt
+		ON me.measurable_type_id = mt.id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[player_workout_types] wt
+		ON wo.player_workout_type_id = wt.id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[reliabilities] re
+		ON me.reliability_id = re.id
+ LEFT JOIN [BaneProductionAnalytics].[dbo].[players] pl
+		ON wo.player_id = pl.id
+	 WHERE wo.[description] NOT LIKE 'PRO Scouting%'
+	   AND (wo.is_deleted = 0 OR (wo.is_deleted = 1 AND wo.[description] LIKE 'NCAA Scouting%'))
+	   --AND re.code IN ('V','W','X','B','P','E')
+	   --AND (MONTH(wo.[date]) IN (6,7,8,9,10,11,12,1) OR (MONTH(wo.[date]) = 2 AND DAY(wo.[date]) < 16) OR (MONTH(wo.[date]) = 5 AND DAY(wo.[date]) > 16))
+	   --AND (pl.nfl_id IS NOT NULL OR nfl_entry_year >= @current_season)
+	   AND nfl_entry_year >= 2005
+	   AND nfl_entry_year <= @current_season + 2
+	   AND ((mt.code = 'Hgt' AND value BETWEEN 5000 AND 7060)
+			OR (mt.code = 'Wgt' AND value BETWEEN 100 AND 450)
+			OR (mt.code = '40YTime' AND value BETWEEN 4.00 AND 7.00))
+
+
+/*
+SELECT *
+FROM #temp_measurables
+WHERE bane_player_id = 7829
+ORDER BY workout_id, measurable_type, priority
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Create a table that gets the average measurables for the player. Since these come from
+scout estimates, borrowed times, or websites, take an average since we can't definitively
+say which is the most accurate to use.
+
+OUTPUT TABLES:
+#temp_measurables_means
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_measurables_means exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_measurables_means') IS NOT NULL
+	DROP TABLE #temp_measurables_means
+
+    SELECT bane_player_id
+		  /*,nfl_entry_year
+		  ,age_at_draft*/
+		  ,measurable_type
+		  ,AVG(value) AS value
+	  INTO #temp_measurables_means
+      FROM #temp_measurables
+	 WHERE measurable_order_by_priority = 1
+  GROUP BY bane_player_id
+		  /*,nfl_entry_year
+		  ,age_at_draft*/
+		  ,measurable_type
+
+/*
+SELECT *
+FROM #temp_measurables_means
+WHERE bane_player_id = 74934
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Pivot the averages table so all measurables are in the same row.
+
+OUTPUT TABLES:
+#temp_measurables_pivot
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+-- Check if #temp_measurables_pivot exists, if it does drop it
+IF OBJECT_ID('tempdb..#temp_measurables_pivot') IS NOT NULL
+	DROP TABLE #temp_measurables_pivot
+
+    SELECT bane_player_id
+		  /*,nfl_entry_year
+		  ,age_at_draft*/
+	      ,[weight]
+	      ,height
+	      ,forty_time
+	  INTO #temp_measurables_pivot
+      FROM (
+    SELECT bane_player_id
+	      /*,nfl_entry_year
+		  ,age_at_draft*/
+		  ,measurable_type
+		  ,value
+      FROM #temp_measurables_means) up
+     PIVOT (MAX(value) FOR measurable_type IN ([height], [weight], [forty_time])) AS pvt
+  ORDER BY bane_player_id
+
+/*
+SELECT * 
+FROM #temp_measurables_pivot
+*/
+
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Join his measurable summary 40 time and position graded as to the pivoted measurables table.
+
+OUTPUT TABLES:
+Analytics.dbo.work_r_input_pre_combine_measurables
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+TRUNCATE TABLE Analytics.dbo.work_r_input_pre_combine_measurables
+
+INSERT INTO Analytics.dbo.work_r_input_pre_combine_measurables
+    SELECT mp.bane_player_id
+		  ,CONCAT(pl.last_name,', ',pl.goes_by) AS player
+		  ,CASE WHEN pl.nfl_entry_year <= @current_season THEN pl.nfl_entry_year
+				WHEN pl.nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN @current_season + 1
+				ELSE NULL
+		   END AS nfl_entry_year
+		  ,CASE WHEN pl.nfl_entry_year <= @current_season THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',pl.nfl_entry_year)) / 365.2425 
+				WHEN pl.nfl_entry_year IN (@current_season + 1,@current_season + 2) THEN DATEDIFF(DD,(birth_date),CONCAT('04/01/',@current_season + 1)) / 365.2425 
+				ELSE NULL
+		   END AS age_at_draft
+		  ,CASE WHEN COALESCE(pg.position,pn.translation) = 'OH' THEN 8
+				WHEN pg.position IS NULL AND pn.abbreviation = 'DE43' THEN 45
+				ELSE COALESCE(pg.position_id,pl.position_id)
+		   END AS position_id 
+		  ,CASE WHEN COALESCE(pg.position,pn.translation) = 'OH' THEN 'RB'
+				WHEN pg.position IS NULL AND pn.abbreviation = 'DE43' THEN 'OB'
+				ELSE COALESCE(pg.position,pn.translation)
+		   END AS position 
+	      ,mp.[weight]
+	      ,mp.height
+	      ,mp.forty_time
+		  ,speed AS actual_forty_time
+		  ,CASE WHEN pl.nfl_entry_year > @current_season THEN NULL ELSE COALESCE(CAST(salaries AS FLOAT),0) END AS pct_of_cap
+		  ,season
+		  ,CASE WHEN pl.nfl_entry_year > @current_season THEN 1 ELSE season_in_league END AS season_in_league
+		  ,CASE WHEN pl.nfl_entry_year > @current_season THEN NULL ELSE COALESCE(grade_value,50) END AS pro_grade
+	  FROM #temp_measurables_pivot mp
+INNER JOIN BaneProductionAnalytics.dbo.players pl
+		ON mp.bane_player_id = pl.id
+ LEFT JOIN BaneProductionAnalytics.dbo.positions pn
+		ON pl.position_id = pn.id  
+ LEFT JOIN BaneProductionAnalytics.dbo.measurable_summaries ms
+		ON mp.bane_player_id = ms.player_id
+ LEFT JOIN AnalyticsWork.dbo.salaries_for_modeling sal
+		ON mp.bane_player_id = sal.id
+	   AND sal.salaries NOT IN ('Injured','Pre-2011')
+ LEFT JOIN Analytics.dbo.analysis_players_pro_grades_first_4_seasons pg
+		ON mp.bane_player_id = pg.bane_player_id
